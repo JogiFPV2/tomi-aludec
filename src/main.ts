@@ -9,6 +9,8 @@ import { creatorScreen } from './ui/screens/creator';
 import { Game } from './game/Game';
 import { Hud } from './ui/hud';
 import { h } from './ui/dom';
+import { PourController } from './ui/screens/pour';
+import { Scoring } from './game/score/scoring';
 
 const params = new URLSearchParams(location.search);
 const isTouch = matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints > 0 && 'ontouchstart' in window);
@@ -55,8 +57,10 @@ async function enterGame(character: Character) {
     try { game = new Game({ container: wrap, backend, character, balance, bus, lowQuality: lowQ }); }
     catch (e) { console.error(e); wrap.append(h('p', { class: 'center-msg', text: 'Ta przeglądarka nie obsługuje grafiki 3D (WebGL). Spróbuj w Chrome, Safari albo Firefox.' })); return () => wrap.remove(); }
     const hud = new Hud(wrap, game, bus, character, { dev: balance.devUnlockAll, onLogout: async () => { game.savePosition(); await backend.signOut(); showAuth(); } });
+    const pour = new PourController(wrap, bus, balance, lowQ);
+    const scoring = new Scoring(bus, backend, character);
     (window as unknown as { __game: Game }).__game = game;
-    return () => { hud.dispose(); game.dispose(); bus.clear(); wrap.remove(); };
+    return () => { pour.dispose(); scoring.dispose(); hud.dispose(); game.dispose(); bus.clear(); wrap.remove(); };
   });
 }
 

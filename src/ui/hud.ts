@@ -18,14 +18,16 @@ export class Hud {
   private hoistPad: HTMLElement; private runBtn: HTMLButtonElement;
   private raf = 0; private offs: (() => void)[] = [];
   private lastToast = new Map<string, number>();
+  private pointsEl: HTMLElement;
 
   constructor(parent: HTMLElement, private game: Game, bus: EventBus, character: Character, opts: { onLogout: () => void; dev: boolean }) {
     const touch = document.body.classList.contains('touch');
     this.roomEl = h('div', { class: 'dim small' });
+    this.pointsEl = h('span', { class: 'num', text: `${character.points} pkt` });
     const stats = h('section', { class: 'panel stats' },
       h('div', { class: 'eyebrow', text: 'Tomi Aludec · zmiana I' }),
       h('div', { class: 'title', text: character.name }),
-      h('div', { class: 'row' }, h('span', { class: 'dim', text: 'Sypacz' }), h('span', { class: 'num', text: `${character.points} pkt` })),
+      h('div', { class: 'row' }, h('span', { class: 'dim', text: 'Sypacz' }), this.pointsEl),
       this.roomEl,
     );
     const menuBtn = h('button', { class: 'btn small', type: 'button', text: 'Wyloguj', onclick: () => opts.onLogout() });
@@ -79,6 +81,8 @@ export class Hud {
 
     this.offs.push(
       bus.on('toast', t => this.toast(t.text, t.kind)),
+      bus.on('points:changed', p => { this.pointsEl.textContent = `${p.points} pkt`; this.toast(`${p.delta >= 0 ? '+' : ''}${p.delta} pkt za sypanie`, p.delta >= 0 ? 'ok' : 'bad'); }),
+      bus.on('game:pause', ({ paused }) => { this.root.classList.toggle('paused', paused); }),
       bus.on('interact:available', it => { this.prompt.hidden = !it; if (it) this.prompt.innerHTML = `<span class="key">${touch ? 'Dotknij' : 'E'}</span> ${it.label}`; }),
       bus.on('crane:enter', () => this.setCraneMode(true)),
       bus.on('crane:exit', () => this.setCraneMode(false)),

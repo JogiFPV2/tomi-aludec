@@ -85,6 +85,12 @@ export class Crane {
     this.bus.emit('toast', { text: `${l.name} zaczepiony – podnoś powoli`, kind: 'ok' });
   }
 
+  /** Model odstawiony na rolotoku danego stanowiska (i odczepiony od haka) albo null. */
+  loadAtStation(stationId: string): LoadObj | null {
+    const st = STATIONS.find(s => s.id === stationId); if (!st) return null;
+    return this.loads.find(l => l !== this.attached && Math.abs(l.x - st.x) < .35 && Math.abs(l.z - st.z) < .25 && Math.abs(l.y - .5) < .02) ?? null;
+  }
+
   private onTarget(l: LoadObj): boolean {
     return STATIONS.some(st => Math.abs(l.x - st.x) < .35 && Math.abs(l.z - st.z) < .25 && Math.abs(l.y - .5) < .02);
   }

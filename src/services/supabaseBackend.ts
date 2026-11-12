@@ -60,6 +60,12 @@ export class SupabaseBackend implements Backend {
     if (error) console.warn('[backend] zapis postaci nie powiódł się', error.message);
   }
 
+  async addPoints(delta: number, reason: string) {
+    const { data, error } = await this.sb.rpc('add_points', { p_delta: Math.round(delta), p_reason: reason });
+    if (error) throw new Error(plError(error.message));
+    return data as number;
+  }
+
   async getBalance() {
     const { data, error } = await this.sb.from('balance').select('key,value');
     if (error) { console.warn('[backend] nie udało się pobrać balansu – używam domyślnego', error.message); return []; }

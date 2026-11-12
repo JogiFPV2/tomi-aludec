@@ -28,6 +28,8 @@ export interface Backend {
   createCharacter(name: string, appearance: Appearance): Promise<{ ok: true; character: Character } | { ok: false; error: string }>;
   updateCharacter(patch: Partial<Pick<Character, 'appearance' | 'last_position'>>): Promise<void>;
   getBalance(): Promise<{ key: string; value: unknown }[]>;
+  /** Dodaje (lub odejmuje) punkty postaci na serwerze. Zwraca nowy stan punktów. */
+  addPoints(delta: number, reason: string): Promise<number>;
 }
 
 /** Tłumaczy typowe komunikaty serwera na zrozumiałe zdania po polsku. */

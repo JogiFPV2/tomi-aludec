@@ -27,10 +27,13 @@ export class Input {
       this.keys.add(k);
     };
     const ku = (e: KeyboardEvent) => this.keys.delete(e.key.toLowerCase());
-    const blur = () => { this.keys.clear(); this.held.clear(); this.joy.x = this.joy.y = 0; };
+    const blur = () => this.reset();
     addEventListener('keydown', kd); addEventListener('keyup', ku); addEventListener('blur', blur);
     this.off.push(() => removeEventListener('keydown', kd), () => removeEventListener('keyup', ku), () => removeEventListener('blur', blur));
   }
+
+  /** Puszcza wszystkie klawisze i gałkę (np. po zamknięciu innego ekranu). */
+  reset() { this.keys.clear(); this.held.clear(); this.joy.x = this.joy.y = 0; }
 
   onAction(fn: (a: Action) => void) { this.listeners.push(fn); }
   fire(a: Action) { for (const fn of this.listeners) fn(a); }

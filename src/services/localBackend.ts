@@ -55,4 +55,8 @@ export class LocalBackend implements Backend {
     Object.assign(d.characters[d.session], patch); save();
   }
   async getBalance() { return []; }
+  async addPoints(delta: number) {
+    const d = db(); const c = d.session ? d.characters[d.session] : undefined; if (!c) throw new Error('Brak postaci');
+    c.points = Math.max(0, c.points + Math.max(-1000, Math.min(1000, Math.round(delta)))); save(); return c.points;
+  }
 }

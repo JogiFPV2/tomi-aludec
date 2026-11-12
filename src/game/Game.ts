@@ -32,7 +32,7 @@ export class Game {
   private camTarget = V(); private camPos = V();
   private interactables: Interactable[] = [];
   nearby: Interactable | null = null;
-  private raf = 0; private last = performance.now(); private saveT = 0; private running = true;
+  private raf = 0; private last = performance.now(); private saveT = 0; private running = true; private paused = false; private offBus: () => void;
   room = '';
 
   constructor(private o: GameOptions) {
@@ -66,6 +66,7 @@ export class Game {
     this.wheel = (e: WheelEvent) => { e.preventDefault(); this.setZoom(this.zoom * (e.deltaY > 0 ? 1.1 : 1 / 1.1)); };
     this.renderer.domElement.addEventListener('wheel', this.wheel, { passive: false });
     document.addEventListener('visibilitychange', this.onHide);
+    this.offBus = o.bus.on('game:pause', ({ paused }) => { this.paused = paused; this.last = performance.now(); this.input.reset(); });
     this.loop();
   }
   private wheel: (e: WheelEvent) => void;
@@ -78,7 +79,11 @@ export class Game {
     this.interactables.push({ id: 'locker', label: 'Twoja szafka', radius: 1.2, pos: () => V(-6.3, 0, 23.9), use: () => bus.emit('toast', { text: 'Szafka: ubrania robocze i kaski odblokujesz za punkty (w kolejnym etapie).' }) });
     this.interactables.push({ id: 'board', label: 'Tablica ogłoszeń', radius: 1.4, pos: () => V(-5, 0, 13.8), use: () => bus.emit('toast', { text: 'Plan zmiany: 8 form KP-180 na stanowisku 1. Uwaga: kontrola BHP w tym tygodniu!' }) });
     this.interactables.push({ id: 'vending', label: 'Automat z napojami', radius: 1.3, pos: () => V(-8.8, 0, 14.4), use: () => bus.emit('toast', { text: 'Automat z napojami – przerwy w jadalni dodamy w kolejnym etapie.' }) });
-    for (const m of this.world.mixers) this.interactables.push({ id: 'mixer', label: 'Mieszarka – sypanie', radius: 1.4, pos: () => V(m.x + .7, 0, m.z + .9), use: () => bus.emit('toast', { text: 'Ekran sypania (Start / Pauza / Wyładuj) powstanie w kolejnym etapie.' }) });
+    for (const m of this.world.mixers) this.interactables.push({ id: 'mixer', label: 'Mieszarka – sypanie', radius: 1.4, pos: () => V(m.x + .7, 0, m.z + .9), use: () => {
+      const l = this.crane.loadAtStation(m.stationId);
+      if (!l) { bus.emit('toast', { text: 'Pod mieszarką nie ma modelu. Podstaw model suwnicą na rolotok tego stanowiska i odczep hak.', kind: 'info' }); return; }
+      bus.emit('pour:open', { stationId: m.stationId, modelId: l.id });
+    } });
     this.interactables.push({ id: 'metals', label: 'Pojemnik z metalami', radius: 1.4, pos: () => V(14.5, 0, 13), use: () => bus.emit('toast', { text: 'Przekładanie metali na paletę dodamy w kolejnym etapie.' }) });
   }
 
@@ -91,7 +96,7 @@ export class Game {
   exitCrane() { if (this.mode !== 'crane') return; this.mode = 'walk'; this.crane.state.vx = this.crane.state.vz = 0; this.o.bus.emit('crane:exit', undefined as never); }
 
   private onAction(a: string) {
-    if (!this.running) return;
+    if (!this.running || this.paused) return;
     if (this.mode === 'crane') {
       if (a === 'attach' || a === 'use') this.crane.toggleAttach();
       if (a === 'gear') this.crane.setGear(this.crane.state.gear === 1 ? 2 : 1);
@@ -104,7 +109,7 @@ export class Game {
   private loop = () => {
     this.raf = requestAnimationFrame(this.loop);
     const now = performance.now(); const dt = Math.min(.05, (now - this.last) / 1000); this.last = now;
-    if (!this.running) return;
+    if (!this.running || this.paused) return;
     this.update(dt);
     if (this.outline) this.outline.render(this.scene, this.camera); else this.renderer.render(this.scene, this.camera);
     (window as unknown as { __frames: number }).__frames = ((window as unknown as { __frames: number }).__frames || 0) + 1;
@@ -170,7 +175,7 @@ export class Game {
   playerPos() { return V(this.player.x, 0, this.player.z); }
 
   dispose() {
-    this.running = false; this.savePosition(); cancelAnimationFrame(this.raf);
+    this.running = false; this.offBus(); this.savePosition(); cancelAnimationFrame(this.raf);
     removeEventListener('resize', this.onResize); document.removeEventListener('visibilitychange', this.onHide);
     this.renderer.domElement.removeEventListener('wheel', this.wheel);
     this.input.dispose(); this.avatar.dispose();

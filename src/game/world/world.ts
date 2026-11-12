@@ -11,7 +11,7 @@ export class World {
   col = new CollisionWorld();
   supports: Support[] = [];
   labels: { text: string; pos: THREE.Vector3 }[] = [];
-  mixers: { arm: THREE.Object3D; x: number; z: number }[] = [];
+  mixers: { arm: THREE.Object3D; x: number; z: number; stationId: string }[] = [];
 
   constructor(private b: Builder) {
     this.buildRooms(); this.buildHall(); this.buildLockerRoom(); this.buildCorridor();
@@ -71,7 +71,7 @@ export class World {
       const arm = new THREE.Group(); arm.position.set(mx, 3.0, mz); s.add(arm);
       arm.add(b.limb(V(0, 0, 0), V(2.6, -.2, 1.9), .18, 'blue', 12));
       arm.add(b.cyl(.2, .08, .45, 'blue', [2.6, -.45, 1.9], undefined, 14));
-      this.mixers.push({ arm, x: st.x + mx, z: st.z + mz });
+      this.mixers.push({ arm, x: st.x + mx, z: st.z + mz, stationId: st.id });
       this.col.addCircle({ x: st.x + mx, z: st.z + mz, r: .6 });
       // pulpit
       s.add(b.box(.4, 1.1, .3, 'steel', [mx + .7, .55, mz + .2]), b.box(.08, .08, .02, 'redBtn', [mx + .7, .95, mz + .36]));

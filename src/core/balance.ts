@@ -15,7 +15,7 @@ export interface Balance {
   };
   player: { walkSpeed: number; runSpeed: number };
   instructions: { freeViewsPerModel: number; penaltyPerExtraView: number };
-  pour: { startDelaySec: number; maxPauseSec: number };
+  pour: import('../game/pour/pourSim').PourBalance;
   /** wersja testowa: odblokuj wszystkie uprawnienia (np. suwnicę) */
   devUnlockAll: boolean;
 }
@@ -24,7 +24,7 @@ export const DEFAULT_BALANCE: Balance = {
   crane: { slowSpeed: 0.35, fastSpeed: 1.1, hoistSlow: 0.12, hoistFast: 0.4, accel: 1.6, swingDamping: 0.06, unlockPoints: 500 },
   player: { walkSpeed: 2.2, runSpeed: 3.6 },
   instructions: { freeViewsPerModel: 20, penaltyPerExtraView: 5 },
-  pour: { startDelaySec: 2, maxPauseSec: 15 },
+  pour: { startDelaySec: 2, maxPauseSec: 15, unloadSec: 3, flowRate: .022, armSpeed: .7, tapPenalty: [30, 70, 100], missingHookPenalty: 100, spillPenaltyPerKg: .5, weakPenalty: 80, basePoints: 300, targetTimeSec: 75, timeBonusMax: 100 },
   devUnlockAll: true,
 };
 
