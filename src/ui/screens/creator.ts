@@ -92,10 +92,13 @@ export function creatorScreen(root: HTMLElement, backend: Backend, lowQ: boolean
   rebuild();
 
   let raf = 0; let camY = 1.1, camD = 4.2;
+  // wysokość twarzy: z kości głowy realistycznej postaci, a dla prostego modelu z wzrostu
+  const hp = new THREE.Vector3();
+  const faceY = () => { const hb = avatar?.group.getObjectByName('head'); if (!hb) return 1.66 * a.height / 180; avatar!.group.updateMatrixWorld(true); hb.getWorldPosition(hp); return hp.y + .07 * a.height / 180; };
   const loop = () => {
     raf = requestAnimationFrame(loop);
     const w = canvasWrap.clientWidth, hh = canvasWrap.clientHeight; if (w && hh && (renderer.domElement.width !== Math.floor(w * renderer.getPixelRatio()) || renderer.domElement.height !== Math.floor(hh * renderer.getPixelRatio()))) { renderer.setSize(w, hh, false); cam.aspect = w / hh; cam.updateProjectionMatrix(); }
-    const k = a.height / 180; const ty = view === 'twarz' ? 1.66 * k : .95 * k, td = view === 'twarz' ? 1.2 : 4.4;
+    const k = a.height / 180; const ty = view === 'twarz' ? faceY() : .95 * k, td = view === 'twarz' ? 1.1 : 4.4;
     camY += (ty - camY) * .12; camD += (td - camD) * .12;
     cam.position.set(Math.sin(.15) * camD, camY + (view === 'twarz' ? .03 : .15), Math.cos(.15) * camD); cam.lookAt(0, camY, 0);
     if (avatar) { avatar.group.rotation.y = rotY; avatar.animate(1 / 60, 0); }

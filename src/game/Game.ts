@@ -55,7 +55,7 @@ export class Game {
     const b = new Builder(this.mats);
     this.world = new World(b); this.scene.add(this.world.group);
     this.crane = new Crane(b, o.bus, (x, z) => this.world.supportAt(x, z), CRANE_START, MODELS); this.crane.balance = o.balance.crane; this.scene.add(this.crane.group);
-    this.avatar = buildAvatar(b, o.character.appearance); this.avatar.setHelmet(true); this.scene.add(this.avatar.group);
+    this.avatar = buildAvatar(b, o.character.appearance, o.lowQuality); this.avatar.setHelmet(true); this.scene.add(this.avatar.group);
 
     const lp = o.character.last_position;
     if (lp && Number.isFinite(lp.x) && Number.isFinite(lp.z)) { const p = this.world.col.resolve(lp.x, lp.z, .3); this.player.x = p.x; this.player.z = p.z; }

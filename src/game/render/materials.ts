@@ -24,6 +24,8 @@ export class Materials {
   readonly tex: ReturnType<typeof buildTextures>;
   private cache = new Map<string, THREE.Material>();
   private grad: THREE.DataTexture;
+  /** mapa tonów cieniowania rysunkowego (wspólna dla wszystkich materiałów) */
+  get gradient(): THREE.DataTexture { return this.grad; }
 
   constructor(low: boolean) {
     this.tex = buildTextures(low);

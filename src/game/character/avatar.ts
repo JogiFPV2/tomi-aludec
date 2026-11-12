@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Builder, V } from '../render/build';
 import type { Appearance } from '../../data/appearance';
+import { buildWorker, humanAsset } from './worker';
 
 /**
  * Buduje postać 3D na podstawie danych wyglądu. Ten sam kod służy w kreatorze i w grze.
@@ -14,7 +15,13 @@ export interface Avatar {
   dispose(): void;
 }
 
-export function buildAvatar(b: Builder, a: Appearance): Avatar {
+/** Postać gracza: realistyczna baza (jeśli zasób jest wczytany), w przeciwnym razie prosty model z brył. */
+export function buildAvatar(b: Builder, a: Appearance, lowQ = false): Avatar {
+  if (humanAsset()) { try { return buildWorker(b.mats, a, lowQ); } catch (e) { console.warn('[postać] realistyczny model nie powstał – używam prostego', e); } }
+  return buildSimpleAvatar(b, a);
+}
+
+export function buildSimpleAvatar(b: Builder, a: Appearance): Avatar {
   const root = new THREE.Group();
   const body = new THREE.Group(); root.add(body);
   const female = a.body === 'k';

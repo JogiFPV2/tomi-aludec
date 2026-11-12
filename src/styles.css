@@ -75,7 +75,7 @@ button, input { font: inherit; color: inherit; }
 .creator-foot .form-msg { margin: 0; }
 @media (max-width: 760px), (max-height: 520px) {
   .creator { overflow: auto; grid-template-rows: auto auto auto; }
-  .creator-body { grid-template-columns: 1fr; }
+  .creator-body { grid-template-columns: 1fr; min-height: auto; }
   .preview { height: 42vh; order: -1; }
   .tabs.vertical { flex-direction: row; flex-wrap: wrap; }
   .panels { overflow: visible; }

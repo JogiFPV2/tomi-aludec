@@ -83,3 +83,16 @@ Alternatywa bez GIT: zbuduj `npm run build` i wgraj zawartość folderu `dist/` 
 | Zaczep / odczep | Spacja | przycisk w panelu |
 | Odłóż kasetę | Esc | przycisk w panelu |
 | Przybliż / oddal | kółko myszy | przyciski + / − |
+
+## Postacie
+
+Postacie są budowane z siatki ciała **MakeHuman** (licencja CC0, www.makehumancommunity.org).
+Zasób gry (`public/assets/human/`) tworzy skrypt `tools/mh_convert.py` z repozytorium MakeHuman:
+
+```
+git clone --depth 1 https://github.com/makehumancommunity/makehuman /tmp/mh
+python3 tools/mh_convert.py /tmp/mh/makehuman/data
+```
+
+Kształt (płeć, wzrost, tusza, brzuch, twarz) to ważone „morfy”, a ubrania, włosy i zarost to powłoki na skórze
+(`src/game/character/human.ts`, `src/game/character/worker.ts`).

@@ -11,6 +11,7 @@ import { Hud } from './ui/hud';
 import { h } from './ui/dom';
 import { PourController } from './ui/screens/pour';
 import { Scoring } from './game/score/scoring';
+import { loadHumanAsset } from './game/character/worker';
 
 const params = new URLSearchParams(location.search);
 const isTouch = matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints > 0 && 'ontouchstart' in window);
@@ -41,7 +42,7 @@ function showAuth() { swap(() => authScreen(app, backend, () => { afterLogin().c
 
 async function afterLogin() {
   loading('Wczytywanie postaci…');
-  const character = await backend.getCharacter();
+  const [character] = await Promise.all([backend.getCharacter(), loadHumanAsset().catch(e => { console.warn('[postać] brak zasobu postaci – prosty model', e); return null; })]);
   if (!character) { swap(() => creatorScreen(app, backend, lowQ, c => enterGame(c))); return; }
   await enterGame(character);
 }
