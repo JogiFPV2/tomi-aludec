@@ -14,10 +14,13 @@ export interface GameEvents {
   'crane:swing': { amplitude: number };
   'crane:locked': { needPoints: number; havePoints: number };
   'toast': { text: string; kind?: 'ok' | 'bad' | 'info' };
-  'pour:open': { stationId: string; modelId: string };
+  'pour:open': { stationId: string; loadId: string; modelId: string };
   'pour:closed': { stationId: string };
-  'pour:finished': { stationId: string; modelId: string; points: number; breakdown: { label: string; pts: number }[] };
-  'points:changed': { points: number; delta: number };
+  'pour:finished': { stationId: string; loadId: string; modelId: string; points: number; breakdown: { label: string; pts: number }[]; hooks: { x: number; z: number; ok?: boolean }[] };
+  'score:add': { delta: number; reason: string };
+  'crane:choice': { options: string[] } | null;
+  'remote:changed': { stationId: string; color: string; name: string } | null;
+  'points:changed': { points: number; delta: number; reason?: string };
   'game:pause': { paused: boolean };
 }
 export type CraneGear = 1 | 2;

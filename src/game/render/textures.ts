@@ -24,8 +24,12 @@ export function buildTextures(low: boolean): Record<TexKey, THREE.CanvasTexture>
   const S = low ? 256 : 512, s2 = low ? 128 : 256;
   return {
     floor: make(S, (u, v, _x, _y, n) => {
-      let b = 118 + fbm(u * 8, v * 8, 8) * 36 - 20; const stain = Math.max(0, fbm(u * 3 + 5, v * 3, 3, 4) - .55) * 3; b *= 1 - stain * .5;
-      if (Math.abs(fbm(u * 6 + 11, v * 6, 6, 3) - .5) < .008) b *= .55; const g = hash(Math.floor(u * n), Math.floor(v * n)) * 14; return [cl(b + g + 2), cl(b + g), cl(b + g - 4)];
+      // malowany beton: szerokie, miękkie plamy koloru, delikatne ziarno, bez ostrych pęknięć
+      const big = fbm(u * 3, v * 3, 3, 4), mid = fbm(u * 9 + 4, v * 9, 9, 3), grain = hash(Math.floor(u * n), Math.floor(v * n));
+      let b = 132 + (big - .5) * 34 + (mid - .5) * 16 + grain * 6;
+      const stain = Math.max(0, fbm(u * 2.5 + 7, v * 2.5, 2.5, 4) - .58) * 2.2; b *= 1 - stain * .35;
+      const warm = (big - .5) * 10;
+      return [cl(b + 10 + warm), cl(b + 1), cl(b - 12 - warm)];
     }, [1, 1]),
     tiles: make(s2, (u, v) => { const gx = (u * 8) % 1, gy = (v * 8) % 1; const grout = gx < .04 || gy < .04; const n = fbm(u * 6, v * 6, 6) * 20; const b = grout ? 120 : 196 + n; return [cl(b), cl(b), cl(b - 6)]; }),
     wall: make(S, (u, v) => { const rib = Math.sin(u * Math.PI * 2 * 24) > 0 ? 12 : -10; const b = 112 + rib + fbm(u * 6, v * 6, 6) * 30 - 15 - fbm(u * 40, v * 2, 40, 3) * 30 * v; return [cl(b - 2), cl(b + 2), cl(b + 6)]; }),

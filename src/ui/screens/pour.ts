@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
 import { h } from '../dom';
 import { Materials } from '../../game/render/materials';
 import { Builder, V, setSeg } from '../../game/render/build';
@@ -20,24 +19,26 @@ export class PourController {
   private saved = new Map<string, Saved>();
   private screen: PourScreen | null = null;
   private off: (() => void)[] = [];
-  done = new Set<string>(); // modele już zasypane
 
   constructor(private wrap: HTMLElement, private bus: EventBus, private balance: Balance, private lowQ: boolean) {
-    this.off.push(bus.on('pour:open', ({ stationId, modelId }) => this.open(stationId, modelId)));
+    this.off.push(bus.on('pour:open', ({ stationId, loadId, modelId }) => this.open(stationId, loadId, modelId)));
   }
 
-  private open(stationId: string, modelId: string) {
+  private open(stationId: string, loadId: string, modelId: string) {
     if (this.screen) return;
     const def = modelById(modelId); if (!def) { this.bus.emit('toast', { text: 'Nieznany model – brak danych w katalogu.', kind: 'bad' }); return; }
-    let s = this.saved.get(stationId);
-    if (!s || s.sim.def.id !== modelId) { s = { sim: new PourSim(def, this.balance.pour), closedAt: 0 }; this.saved.set(stationId, s); }
+    // stan sypania pamiętany dla każdego modelu osobno (na rolotoku mogą stać 3)
+    let s = this.saved.get(loadId);
+    if (!s) { s = { sim: new PourSim(def, this.balance.pour), closedAt: 0 }; this.saved.set(loadId, s); }
     else if (s.closedAt) { // czas, gdy gracza nie było przy maszynie (maszyna stała na pauzie)
       let away = (performance.now() - s.closedAt) / 1000; while (away > 0) { const d = Math.min(.25, away); s.sim.step(d); away -= d; }
     }
     this.bus.emit('game:pause', { paused: true });
     this.screen = new PourScreen(this.wrap, s.sim, this.bus, this.lowQ, stationId, (result) => {
-      if (result) { this.done.add(modelId); this.saved.delete(stationId); this.bus.emit('pour:finished', { stationId, modelId, points: result.points, breakdown: result.breakdown }); }
-      else { const sv = this.saved.get(stationId); if (sv) sv.closedAt = performance.now(); }
+      if (result) {
+        const hooks = s!.sim.hooks.filter(hk => hk.placed).map(hk => ({ x: hk.x, z: hk.z, ok: hk.depthOk }));
+        this.saved.delete(loadId); this.bus.emit('pour:finished', { stationId, loadId, modelId, points: result.points, breakdown: result.breakdown, hooks });
+      } else { const sv = this.saved.get(loadId); if (sv) sv.closedAt = performance.now(); }
       this.screen = null; this.bus.emit('game:pause', { paused: false }); this.bus.emit('pour:closed', { stationId });
     });
   }
@@ -48,7 +49,9 @@ export class PourController {
 class PourScreen {
   private el: HTMLElement;
   private renderer: THREE.WebGLRenderer; private scene = new THREE.Scene(); private cam: THREE.PerspectiveCamera;
-  private outline: OutlineEffect; private mats: Materials; private b: Builder;
+  private mats: Materials; private b: Builder;
+  private joy = { x: 0, y: 0 }; private frameK = 0;
+  private panels: HTMLElement[] = [];
   private sandGeo: THREE.PlaneGeometry; private model = new THREE.Group();
   private funnel = new THREE.Group(); private armMesh: THREE.Mesh; private stream: THREE.Mesh;
   private hookMeshes: THREE.Object3D[] = [];
@@ -56,8 +59,7 @@ class PourScreen {
   private ui: Record<string, HTMLElement> = {};
   private tapEls: HTMLButtonElement[] = []; private hookEls: HTMLButtonElement[] = [];
   private xsec: HTMLCanvasElement;
-  private keys = new Set<string>(); private dragging = false;
-  private ray = new THREE.Raycaster(); private plane: THREE.Plane;
+  private keys = new Set<string>();
   private offKeys: () => void;
   private lastMsg = new Map<string, number>();
 
@@ -66,19 +68,17 @@ class PourScreen {
     this.mats = new Materials(lowQ); this.b = new Builder(this.mats);
     this.renderer = new THREE.WebGLRenderer({ antialias: !lowQ, preserveDrawingBuffer: new URLSearchParams(location.search).has('zrzut') });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, lowQ ? 1.25 : 2)); this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.1; this.renderer.shadowMap.enabled = true;
-    this.outline = new OutlineEffect(this.renderer, { defaultThickness: .003, defaultColor: [.09, .07, .05], defaultAlpha: .9 });
-    this.scene.background = new THREE.Color(0x232220);
-    this.scene.add(new THREE.HemisphereLight(0xc8d4e4, 0x5a4a3c, 1.3));
-    const sun = new THREE.DirectionalLight(0xfff0d8, 2.2); sun.position.set(-1.5, 4, 1.2); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.15; this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.scene.background = new THREE.Color(0x2a221b);
+    this.scene.add(new THREE.HemisphereLight(0xffe2bd, 0x6a4b30, 1.6));
+    const sun = new THREE.DirectionalLight(0xffcf96, 2.8); sun.position.set(-1.5, 4, 1.2); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
     Object.assign(sun.shadow.camera, { left: -2, right: 2, top: 2, bottom: -2 }); this.scene.add(sun);
     this.cam = new THREE.PerspectiveCamera(38, 1, .05, 50);
-    this.plane = new THREE.Plane(V(0, 1, 0), -(def.inner.h + .06));
 
     this.buildModel(def);
     this.sandGeo = new THREE.PlaneGeometry(def.inner.l, def.inner.w, NX - 1, NZ - 1); this.sandGeo.rotateX(-Math.PI / 2);
     this.sandGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(NX * NZ * 3).fill(1), 3));
-    const sandMat = new THREE.MeshToonMaterial({ map: this.mats.tex.sand, color: 0x9a9690, vertexColors: true, gradientMap: (this.mats.get('sand') as THREE.MeshToonMaterial).gradientMap });
+    const sandMat = new THREE.MeshStandardMaterial({ map: this.mats.tex.sand, color: 0xa39d95, vertexColors: true, roughness: .95 });
     const sand = new THREE.Mesh(this.sandGeo, sandMat); sand.position.y = .06; sand.receiveShadow = true; this.model.add(sand);
     // ramię mieszarki i lej
     this.armMesh = this.b.seg('blue', .1); this.scene.add(this.armMesh);
@@ -104,27 +104,28 @@ class PourScreen {
     sim.hooks.forEach((_, k) => { const e = h('button', { class: 'hookmk', type: 'button', 'aria-label': 'Wstaw hak', text: 'Ω', onclick: (ev: Event) => { ev.stopPropagation(); this.hook(k); } }); tagLayer.append(e); this.hookEls.push(e); });
 
     const canvasBox = h('div', { class: 'pcanvas' }, this.renderer.domElement, tagLayer);
-    this.el = h('div', { class: 'screen pour' }, canvasBox,
-      h('section', { class: 'panel ptop' }, h('div', { class: 'eyebrow', text: `${def.number} · ${stationId.replace('st', 'stanowisko ')}` }), h('div', { class: 'dim small', text: 'Czas od Start' }), this.ui.timer, this.ui.state),
-      h('section', { class: 'panel pmachine' }, h('div', { class: 'eyebrow', text: 'Mieszarka' }),
-        btn('start', 'Start', () => this.msg(sim.start())), btn('pause', 'Pauza', () => this.msg(sim.pause())), btn('unload', 'Wyładuj', () => this.msg(sim.unload())),
-        h('div', { class: 'row small' }, h('span', { class: 'dim', text: 'Pauza (maks.)' }), this.ui.pauseTxt), h('div', { class: 'bar' }, this.ui.pauseBar), this.ui.warn),
-      h('section', { class: 'panel pmetals' }, h('div', { class: 'eyebrow', text: 'Metale w tym modelu' }), this.ui.metals,
-        h('div', { class: 'dim small', text: `Brak podbić: ${sim.bal.tapPenalty.map(p => '−' + p).join(' / ')} pkt` })),
-      h('section', { class: 'panel pxsec' }, h('div', { class: 'row' }, h('span', { class: 'eyebrow', text: 'Przekrój modelu' }), this.ui.fill), this.xsec),
-      h('div', { class: 'pbottom' }, this.ui.hint, h('div', { class: 'pacts' }, h('button', { class: 'btn', type: 'button', text: 'Wróć na halę', onclick: () => this.close(null) }), this.ui.finish)),
-      !touch ? h('div', { class: 'pkeys dim small', text: 'Mysz: kliknij/przeciągnij nad modelem, żeby przesunąć ramię · W A S D: ramię · Spacja: Start/Pauza · Esc: wróć' }) : null,
-    );
+    // gałka ramienia mieszarki (lewy dół) – palec nie zasłania modelu, który jest w prawym dole
+    const knob = h('i'); const joy = h('div', { class: 'pjoy', 'aria-label': 'Ramię mieszarki – gałka' }, knob, h('span', { class: 'pjoy-lbl', text: 'Ramię' }));
+    let pid = -1; const R = 50;
+    const setJoy = (e: PointerEvent) => { const r = joy.getBoundingClientRect(); let x = (e.clientX - r.left - r.width / 2) / R, y = (e.clientY - r.top - r.height / 2) / R; const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; } knob.style.transform = `translate(${x * R}px,${y * R}px)`; this.joy.x = x; this.joy.y = y; };
+    joy.addEventListener('pointerdown', e => { pid = e.pointerId; joy.setPointerCapture(pid); setJoy(e); });
+    joy.addEventListener('pointermove', e => { if (e.pointerId === pid) setJoy(e); });
+    const endJoy = () => { pid = -1; knob.style.transform = ''; this.joy.x = this.joy.y = 0; };
+    joy.addEventListener('pointerup', endJoy); joy.addEventListener('pointercancel', endJoy);
+    const metalsBox = h('details', { class: 'pmetals' }, h('summary', { text: `Metale w modelu (${sim.metals.length})` }), this.ui.metals,
+      h('div', { class: 'dim small', text: `Brak podbić: ${sim.bal.tapPenalty.map(p => '−' + p).join(' / ')} pkt` }));
+    const left = h('section', { class: 'panel ptop' },
+      h('div', { class: 'row' }, h('span', { class: 'eyebrow', text: `${def.number} · ${stationId.replace('st', 'stanowisko ')}` }), this.ui.fill),
+      h('div', { class: 'row tline' }, this.ui.timer, this.ui.state), this.ui.hint,
+      h('div', { class: 'pxsec' }, this.xsec), metalsBox,
+      h('div', { class: 'pacts' }, h('button', { class: 'btn', type: 'button', text: 'Wróć na halę', onclick: () => this.close(null) }), this.ui.finish));
+    const right = h('section', { class: 'panel pmachine' },
+      h('div', { class: 'mbtns' }, btn('start', 'Start', () => this.msg(sim.start())), btn('pause', 'Pauza', () => this.msg(sim.pause())), btn('unload', 'Wyładuj', () => this.msg(sim.unload()))),
+      h('div', { class: 'row small' }, h('span', { class: 'dim', text: 'Pauza (maks.)' }), this.ui.pauseTxt), h('div', { class: 'bar' }, this.ui.pauseBar), this.ui.warn);
+    this.panels = [left, right];
+    this.el = h('div', { class: 'screen pour' }, canvasBox, left, right, joy,
+      !touch ? h('div', { class: 'pkeys dim small', text: 'W A S D / gałka: ramię · Spacja: Start/Pauza · Esc: wróć' }) : null);
     parent.append(this.el);
-    // sterowanie ramieniem
-    const cv = this.renderer.domElement;
-    const aim = (e: PointerEvent) => {
-      const r = cv.getBoundingClientRect(); this.ray.setFromCamera(new THREE.Vector2((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height * 2 - 1)), this.cam);
-      const p = new THREE.Vector3(); if (this.ray.ray.intersectPlane(this.plane, p)) sim.setArmTarget(p.x, p.z);
-    };
-    cv.addEventListener('pointerdown', e => { this.dragging = true; cv.setPointerCapture(e.pointerId); aim(e); });
-    cv.addEventListener('pointermove', e => { if (this.dragging) aim(e); });
-    cv.addEventListener('pointerup', () => this.dragging = false); cv.addEventListener('pointercancel', () => this.dragging = false);
     const kd = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase(); this.keys.add(k);
       if (k === 'escape') { e.preventDefault(); this.close(null); }
@@ -175,7 +176,7 @@ class PourScreen {
     const modal = h('div', { class: 'pmodal' }, h('div', { class: 'panel' },
       h('div', { class: 'eyebrow', text: 'Forma zasypana' }), h('div', { class: 'title', text: `${this.sim.def.number} · ${Math.round(r.timeSec)} s` }),
       h('table', { class: 'sumtab' }, ...rows, h('tr', { class: 'tot' }, h('td', { text: 'Razem' }), h('td', { text: (r.points > 0 ? '+' : '') + r.points + ' pkt' }))),
-      h('p', { class: 'dim small', text: 'Następne etapy (utwardzanie, otwieranie modelu i wyciąganie formy) dodamy w kolejnej wersji.' }),
+      h('p', { class: 'dim small', text: 'Forma zostaje w modelu. Na hali weź pilota suwnicy, zaczep za haki formy i wyciągnij ją powoli, trzymając poziom.' }),
       h('button', { class: 'btn pri wide', type: 'button', text: 'Zapisz wynik i wróć na halę', onclick: () => this.close(r) })));
     this.el.append(modal);
   }
@@ -195,7 +196,8 @@ class PourScreen {
     // klawiatura przesuwa cel ramienia
     const kx = (this.keys.has('d') || this.keys.has('arrowright') ? 1 : 0) - (this.keys.has('a') || this.keys.has('arrowleft') ? 1 : 0);
     const kz = (this.keys.has('s') || this.keys.has('arrowdown') ? 1 : 0) - (this.keys.has('w') || this.keys.has('arrowup') ? 1 : 0);
-    if (kx || kz) s.setArmTarget(s.arm.tx + kx * s.bal.armSpeed * dt * 1.2, s.arm.tz + kz * s.bal.armSpeed * dt * 1.2);
+    const jx = kx + this.joy.x, jz = kz + this.joy.y;
+    if (jx || jz) s.setArmTarget(s.arm.tx + jx * s.bal.armSpeed * dt * 1.2, s.arm.tz + jz * s.bal.armSpeed * dt * 1.2);
     s.step(dt);
     this.render3d(); this.updateUi();
     (window as unknown as { __frames: number }).__frames = ((window as unknown as { __frames: number }).__frames || 0) + 1;
@@ -207,8 +209,7 @@ class PourScreen {
     if (w && hh && (this.renderer.domElement.width !== Math.floor(w * this.renderer.getPixelRatio()) || this.renderer.domElement.height !== Math.floor(hh * this.renderer.getPixelRatio()))) {
       this.renderer.setSize(w, hh, false); this.cam.aspect = w / hh; this.cam.updateProjectionMatrix();
     }
-    const fit = Math.max(1.05, 1.45 / Math.max(.5, this.cam.aspect));
-    this.cam.position.set(0, 2.5 * fit, 1.25 * fit); this.cam.lookAt(0, .25, .05);
+    this.frame(w, hh);
     // piasek
     const pos = this.sandGeo.attributes.position as THREE.BufferAttribute, col = this.sandGeo.attributes.color as THREE.BufferAttribute;
     for (let v = 0; v < pos.count; v++) {
@@ -222,7 +223,42 @@ class PourScreen {
     setSeg(this.armMesh, V(-def.inner.l / 2 - 1.2, fy + .35, -def.inner.w / 2 - .9), V(s.arm.x, fy + .3, s.arm.z));
     const flowing = s.machine === 'sypie';
     if (flowing) setSeg(this.stream, V(s.arm.x, fy - .05, s.arm.z), V(s.arm.x, s.armOverModel() ? .06 + s.surface(s.arm.x, s.arm.z) : -.5, s.arm.z)); else this.stream.visible = false;
-    this.outline.render(this.scene, this.cam);
+    this.renderer.render(this.scene, this.cam);
+  }
+
+  /**
+   * Kadr: przed Start model na środku, po Start cały model w prawym dolnym rogu ekranu
+   * (z lewej gałka ramienia, u góry panele) – kamera dobiera odległość, a przesunięcie robi setViewOffset.
+   */
+  private frame(W: number, H: number) {
+    const s = this.sim, def = s.def;
+    this.frameK += ((s.started ? 1 : 0) - this.frameK) * .08;
+    const k = this.frameK;
+    const box = this.renderer.domElement.parentElement!.getBoundingClientRect();
+    let top = 0, leftW = 0, leftB = 0;
+    for (const p of this.panels) { const r = p.getBoundingClientRect(); top = Math.max(top, r.bottom - box.top); }
+    { const r = this.panels[0].getBoundingClientRect(); leftW = r.right - box.left; leftB = r.bottom - box.top; }
+    const portrait = W < H * 1.05;
+    // obszar docelowy (piksele): przed Start – środek; po Start – prawy dół
+    const A = portrait ? { x0: 8, x1: W - 8, y0: top + 8, y1: H * .82 } : { x0: leftW + 12, x1: W - 12, y0: top + 8, y1: H - 12 };
+    const B = portrait ? { x0: W * .3, x1: W - 6, y0: Math.max(top, leftB) + 6, y1: H - 6 } : { x0: Math.max(W * .42, leftW + 12), x1: W - 8, y0: Math.max(H * .3, Math.min(top, H * .45)) + 6, y1: H - 8 };
+    const R = { x0: A.x0 + (B.x0 - A.x0) * k, x1: A.x1 + (B.x1 - A.x1) * k, y0: A.y0 + (B.y0 - A.y0) * k, y1: A.y1 + (B.y1 - A.y1) * k };
+    const rw = Math.max(80, R.x1 - R.x0), rh = Math.max(80, R.y1 - R.y0);
+    const hx = def.inner.l / 2 + .14, hz = def.inner.w / 2 + .14, Ht = def.inner.h + .1;
+    const corners = [-1, 1].flatMap(a => [-1, 1].flatMap(b => [0, Ht].map(y => V(a * hx, y, b * hz))));
+    const dir = V(0, 2.5, 1.25).normalize(); let d = 3;
+    this.cam.clearViewOffset(); this.cam.aspect = W / H;
+    let cx = 0, cy = 0;
+    for (let it = 0; it < 4; it++) {
+      this.cam.position.copy(dir).multiplyScalar(d); this.cam.lookAt(0, .25, 0); this.cam.updateProjectionMatrix(); this.cam.updateMatrixWorld();
+      let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+      for (const c of corners) { const v = c.clone().project(this.cam); const px = (v.x + 1) / 2 * W, py = (1 - v.y) / 2 * H; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); }
+      const f = Math.max((x1 - x0) / rw, (y1 - y0) / rh); d *= f * 1.04; cx = (x0 + x1) / 2; cy = (y0 + y1) / 2;
+    }
+    this.cam.position.copy(dir).multiplyScalar(d); this.cam.lookAt(0, .25, 0); this.cam.updateMatrixWorld();
+    { let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; for (const c of corners) { const v = c.clone().project(this.cam); const px = (v.x + 1) / 2 * W, py = (1 - v.y) / 2 * H; x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py); } cx = (x0 + x1) / 2; cy = (y0 + y1) / 2; }
+    // środek modelu przesuwamy na środek obszaru
+    this.cam.setViewOffset(W, H, cx - (R.x0 + R.x1) / 2, cy - (R.y0 + R.y1) / 2, W, H);
   }
 
   private project(x: number, y: number, z: number) {
@@ -257,7 +293,7 @@ class PourScreen {
     (this.ui.finish as HTMLButtonElement).disabled = !s.canFinish();
     const pending = s.metals.some((_, k) => this.tapEls[k].classList.contains('now'));
     const hookNow = s.hooks.some((hk, k) => !hk.placed && this.hookEls[k].classList.contains('now'));
-    this.ui.hint.textContent = !s.started ? 'Przesuń ramię nad model (kliknij lub przeciągnij nad modelem) i wciśnij Start.'
+    this.ui.hint.textContent = !s.started ? 'Gałką w lewym dolnym rogu (albo W A S D) ustaw ramię nad modelem i wciśnij Start.'
       : pending ? 'Masa dochodzi do metali – teraz podbijaj (dotknij licznika przy metalu).'
       : hookNow ? 'Teraz wstaw hak Ω (dotknij znacznika).'
       : fill >= .97 ? 'Model pełny – wciśnij Pauzę i Zakończ sypanie.'

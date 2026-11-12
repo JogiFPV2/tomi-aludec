@@ -83,7 +83,7 @@ export interface HumanBuild {
   /** siatki powłok po nazwie (np. do chowania włosów pod kaskiem) */
   shell(name: string): THREE.Object3D | undefined;
   ctx: ShapeCtx;
-  mat(color: string, opts?: THREE.MeshToonMaterialParameters): THREE.MeshToonMaterial;
+  mat(color: string, opts?: THREE.MeshStandardMaterialParameters): THREE.Material;
   animate(dt: number, speed: number): void;
   /** ustawia kość wzdłuż kierunku w układzie postaci (pozy) */
   aim(name: string, dir: THREE.Vector3, twist?: THREE.Quaternion): void;
@@ -161,8 +161,12 @@ export function buildHuman(a: HumanAsset, shape: HumanShape, look: HumanLook): H
   group.updateMatrixWorld(true);
 
   const mats: THREE.Material[] = []; const geos: THREE.BufferGeometry[] = [];
-  const mat = (color: string, opts: THREE.MeshToonMaterialParameters = {}) => {
-    const m = new THREE.MeshToonMaterial({ color: new THREE.Color(color), gradientMap: look.gradientMap ?? null, ...opts }); mats.push(m); return m;
+  // z mapą tonów: styl rysunkowy (strona karykatur); bez niej: miękkie, malowane cieniowanie gry
+  const mat = (color: string, opts: THREE.MeshStandardMaterialParameters = {}): THREE.Material => {
+    const m = look.gradientMap
+      ? new THREE.MeshToonMaterial({ color: new THREE.Color(color), gradientMap: look.gradientMap, ...(opts as THREE.MeshToonMaterialParameters) })
+      : new THREE.MeshStandardMaterial({ color: new THREE.Color(color), roughness: .62, metalness: 0, ...opts });
+    mats.push(m); return m;
   };
   const regionId = meta.regions;
 

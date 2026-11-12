@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Builder, V } from '../render/build';
 import { CollisionWorld } from './collision';
-import { ROOMS, WALLS, STATIONS, COLUMNS, PALLETS, DOORS } from '../../data/layout';
+import { ROOMS, WALLS, STATIONS, COLUMNS, PALLETS, DOORS, SLOT_X, MIXER_OFF, FORM_PALLETS_OFF, MODELS } from '../../data/layout';
 
 /** Buduje świat z danych układu: podłogi, ściany, stanowiska, wyposażenie, kolizje i podłoża. */
 export interface Support { x0: number; z0: number; x1: number; z1: number; h: number }
@@ -57,16 +57,24 @@ export class World {
     // stanowiska: rolotok + mieszarka
     for (const st of STATIONS) {
       const s = new THREE.Group(); s.position.set(st.x, 0, st.z); g.add(s);
-      for (const z of [-.62, .62]) s.add(b.box(4.4, .14, .08, 'yellow', [0, .42, z]));
-      for (let x = -2.1; x <= 2.1; x += .3) s.add(b.cyl(.045, .045, 1.18, 'steel', [x, .44, 0], [Math.PI / 2, 0, 0], 8));
-      for (const x of [-2, 0, 2]) for (const z of [-.62, .62]) s.add(b.box(.08, .42, .08, 'dark', [x, .21, z]));
-      this.supports.push({ x0: st.x - 2.2, z0: st.z - .66, x1: st.x + 2.2, z1: st.z + .66, h: .5 });
-      this.col.addRect({ x0: st.x - 2.25, z0: st.z - .7, x1: st.x + 2.25, z1: st.z + .7 });
-      // pole docelowe
-      const tg = new THREE.Group(); tg.position.set(0, .52, 0); s.add(tg);
-      for (const [w, d, x, z] of [[1.72, .035, 0, .66], [1.72, .035, 0, -.66], [.035, 1.32, .86, 0], [.035, 1.32, -.86, 0]]) tg.add(b.box(w, .01, d, 'target', [x, 0, z]));
+      // rolotok na 3 modele
+      const RL = 6.5;
+      for (const z of [-.62, .62]) s.add(b.box(RL, .14, .08, 'yellow', [0, .42, z]));
+      for (let x = -RL / 2 + .1; x <= RL / 2 - .1; x += .3) s.add(b.cyl(.045, .045, 1.18, 'steel', [x, .44, 0], [Math.PI / 2, 0, 0], 8));
+      for (const x of [-3, -1, 1, 3]) for (const z of [-.62, .62]) s.add(b.box(.08, .42, .08, 'dark', [x, .21, z]));
+      this.supports.push({ x0: st.x - RL / 2, z0: st.z - .66, x1: st.x + RL / 2, z1: st.z + .66, h: .5 });
+      this.col.addRect({ x0: st.x - RL / 2 - .05, z0: st.z - .7, x1: st.x + RL / 2 + .05, z1: st.z + .7 });
+      // pola docelowe – 3 miejsca na modele
+      SLOT_X.forEach((sx, i) => {
+        const tg = new THREE.Group(); tg.position.set(sx, .52, 0); s.add(tg);
+        for (const [w, d, x, z] of [[1.72, .035, 0, .66], [1.72, .035, 0, -.66], [.035, 1.32, .86, 0], [.035, 1.32, -.86, 0]]) tg.add(b.box(w, .01, d, 'target', [x, 0, z]));
+        tg.add(b.box(.16, .01, .16 * (i + 1), 'target', [0, 0, .5]));
+      });
+      // palety na gotowe formy
+      for (const fp of FORM_PALLETS_OFF) this.pallet(st.x + fp.x, fp.z);
+      this.labels.push({ text: 'Palety na formy', pos: V(st.x + 1.3, 1, FORM_PALLETS_OFF[0].z) });
       // mieszarka
-      const mx = -2.9, mz = -2.2;
+      const mx = MIXER_OFF.x, mz = MIXER_OFF.z;
       s.add(b.cyl(.45, .55, .5, 'blue', [mx, .25, mz], undefined, 20), b.cyl(.32, .32, 2.6, 'blue', [mx, 1.75, mz], undefined, 20), b.cyl(.42, .42, .35, 'dark', [mx, 3.1, mz], undefined, 20));
       const arm = new THREE.Group(); arm.position.set(mx, 3.0, mz); s.add(arm);
       arm.add(b.limb(V(0, 0, 0), V(2.6, -.2, 1.9), .18, 'blue', 12));
@@ -88,13 +96,13 @@ export class World {
     // palety (część pusta – do szukania), gotowe formy
     for (const [x, z] of PALLETS) this.pallet(x, z);
     for (let i = 0; i < 4; i++) { const x = 21 + i * 1.8, z = 18.8; this.pallet(x, z); g.add(b.box(1.44, .5, 1.04, 'sand', [x, .39, z])); }
-    // paleta z modelami do przeniesienia
-    this.pallet(8.5, 11.6); this.pallet(11.2, 11.6);
+    // palety z modelami do przeniesienia
+    for (const m of MODELS) this.pallet(m.x, m.z);
     // pojemnik na metale
-    g.add(b.box(1.6, .7, 1.1, 'steel', [14.5, .35, 12]));
-    for (let i = 0; i < 8; i++) g.add(b.box(.13, .1, .08, 'chill', [14.0 + (i % 4) * .3, .74, 11.8 + Math.floor(i / 4) * .35]));
-    this.col.addRect({ x0: 13.7, z0: 11.45, x1: 15.3, z1: 12.55 });
-    this.labels.push({ text: 'Pojemnik z metalami', pos: V(14.5, 1.4, 12) });
+    g.add(b.box(1.6, .7, 1.1, 'steel', [14.5, .35, 14]));
+    for (let i = 0; i < 8; i++) g.add(b.box(.13, .1, .08, 'chill', [14.0 + (i % 4) * .3, .74, 13.8 + Math.floor(i / 4) * .35]));
+    this.col.addRect({ x0: 13.7, z0: 13.45, x1: 15.3, z1: 14.55 });
+    this.labels.push({ text: 'Pojemnik z metalami', pos: V(14.5, 1.4, 14) });
     // wózek widłowy (stoi)
     const fk = new THREE.Group(); fk.position.set(31, 0, 17); fk.rotation.y = -Math.PI / 2; g.add(fk);
     fk.add(b.box(1.2, .7, 2, 'orange', [0, .6, 0]), b.box(1.1, .06, 1.5, 'dark', [0, 2.25, .1]));

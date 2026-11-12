@@ -9,6 +9,9 @@ import type { Avatar } from './avatar';
  * Wygląd (Appearance) zamieniany na parametry sylwetki i warstwy (włosy, zarost, ubranie).
  */
 
+/** powiększenie głowy postaci (styl bajkowy) */
+export const HEAD_SCALE = 2.05;
+
 let assetP: Promise<HumanAsset> | null = null;
 let asset: HumanAsset | null = null;
 /** Wczytuje zasób postaci raz na całą grę. */
@@ -41,7 +44,7 @@ export function buildWorker(mats: Materials, a: Appearance, lowQ = false): Avata
   const as = asset; if (!as) throw new Error('Zasób postaci nie jest wczytany');
   const hairM = mats.color(a.hairColor);
   // pasy odblaskowe rysowane zawsze na wierzchu kamizelki
-  const band = mats.color('#c3c8cb', 'reflect-band') as THREE.MeshToonMaterial; band.polygonOffset = true; band.polygonOffsetFactor = -4; band.polygonOffsetUnits = -4;
+  const band = mats.color('#c3c8cb', 'reflect-band') as THREE.MeshStandardMaterial; band.polygonOffset = true; band.polygonOffsetFactor = -4; band.polygonOffsetUnits = -4;
   const shells: ShellSpec[] = [
     { name: 'pants', regions: ['hips', 'thigh', 'shin', 'ankle'], offset: .008, color: '', material: mats.get('pants'), smooth: 3 },
     { name: 'jacket', regions: ['torso', 'upperarm', 'forearm', 'hips'], offset: .01, color: '', material: mats.get('jacket'), smooth: 4, filter: (p, c) => p.y > c.joint('spine03____head').y - .14 },
@@ -49,7 +52,7 @@ export function buildWorker(mats: Materials, a: Appearance, lowQ = false): Avata
     { name: 'band1', regions: ['torso', 'hips'], offset: .025, color: '', material: band, smooth: 6, cover: 'all', filter: (p, c) => { const y0 = c.joint('spine03____head').y; return p.y > y0 - .04 && p.y < y0 - .01; } },
     { name: 'band2', regions: ['torso'], offset: .025, color: '', material: band, smooth: 6, cover: 'all', filter: (p, c) => { const y0 = c.joint('spine03____head').y; return p.y > y0 + .08 && p.y < y0 + .11; } },
     { name: 'gloves', regions: ['hand'], offset: .005, color: '', material: mats.get('glove'), smooth: 3 },
-    { name: 'boots', regions: ['foot', 'ankle'], offset: .018, color: '', material: mats.get('rubber'), smooth: 25, hide: true, filter: p => p.y < .2 },
+    { name: 'boots', regions: ['foot', 'ankle'], offset: .028, color: '', material: mats.color('#191513', 'boot'), smooth: 45, hide: true, filter: p => p.y < .2 },
   ];
   // włosy
   if (a.hairStyle !== 'lysy') {
@@ -64,7 +67,7 @@ export function buildWorker(mats: Materials, a: Appearance, lowQ = false): Avata
 
   let helmet: THREE.Group | null = null;
   const h = buildHuman(as, appearanceShape(a), {
-    skin: a.skin, eyeColor: a.eyeColor, shells, gradientMap: mats.gradient,
+    skin: a.skin, eyeColor: a.eyeColor, shells,
     extras: b => {
       addBrows(b, a.hairColor, { thick: a.body === 'k' ? .75 : 1 });
       helmet = addHelmet(b, mats, a);
@@ -73,8 +76,13 @@ export function buildWorker(mats: Materials, a: Appearance, lowQ = false): Avata
       if (a.glasses !== 'none') addGlasses(b, mats, a.glasses);
     },
   });
-  // dokładny wzrost z kreatora
-  h.group.scale.setScalar(a.height / 100 / h.height);
+  // styl bajkowy: duża głowa na mniejszym ciele (jak na grafice referencyjnej)
+  h.bones['head'].scale.setScalar(HEAD_SCALE); h.bones['neck01'].scale.set(1.12, 1, 1.12);
+  for (const s of ['L', 'R']) h.bones['wrist.' + s].scale.setScalar(1.18);
+  // dokładny wzrost z kreatora (z powiększoną głową)
+  h.group.updateMatrixWorld(true);
+  const bodyM = h.group.getObjectByName('body') as THREE.SkinnedMesh; bodyM.computeBoundingBox();
+  h.group.scale.setScalar(a.height / 100 / (bodyM.boundingBox!.max.y || h.height));
   if (lowQ) h.group.traverse(o => { if ((o as THREE.Mesh).isMesh) o.castShadow = o.name === 'body' || o.name === 'jacket' || o.name === 'pants'; });
   const hair = h.shell('hair');
   return {

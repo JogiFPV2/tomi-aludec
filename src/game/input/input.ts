@@ -2,7 +2,7 @@
  * Sterowanie: klawiatura (komputer) i gałka + przyciski na ekranie (telefon).
  * Reszta gry pyta tylko o „oś ruchu” i „akcje” – nie wie, skąd przyszły.
  */
-export type Action = 'use' | 'attach' | 'gear' | 'exit' | 'run';
+export type Action = 'use' | 'attach' | 'gear' | 'exit' | 'run' | 'control' | 'sel1' | 'sel2' | 'sel3' | 'sel4';
 
 export class Input {
   private keys = new Set<string>();
@@ -23,6 +23,8 @@ export class Input {
         if (k === ' ') this.fire('attach');
         if (k === 'q' || k === 'tab') this.fire('gear');
         if (k === 'escape') this.fire('exit');
+        if (k === 'c') this.fire('control');
+        if (k >= '1' && k <= '4') this.fire(('sel' + k) as Action);
       }
       this.keys.add(k);
     };
@@ -48,6 +50,8 @@ export class Input {
     return { x, z };
   }
   hoist(): number { return this.k('r') + this.k('pageup') + this.k('hoist-up') - this.k('f') - this.k('pagedown') - this.k('hoist-down'); }
+  /** skracanie (+1) / luzowanie (−1) wybranego łańcucha */
+  chain(): -1 | 0 | 1 { const v = this.k('x') + this.k('chain-up') - this.k('z') - this.k('chain-down'); return v > 0 ? 1 : v < 0 ? -1 : 0; }
   running(): boolean { return this.keys.has('shift') || this.runToggle; }
 
   setJoystick(x: number, y: number, active: boolean) { this.joy.x = x; this.joy.y = y; this.joy.active = active; }

@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { OutlineEffect } from 'three/examples/jsm/effects/OutlineEffect.js';
 import { h } from '../dom';
 import { Materials } from '../../game/render/materials';
 import { Builder } from '../../game/render/build';
@@ -14,11 +13,10 @@ export function creatorScreen(root: HTMLElement, backend: Backend, lowQ: boolean
   let a: Appearance = { ...DEFAULT_APPEARANCE };
   // podgląd 3D
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2)); renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  const outline = new OutlineEffect(renderer, { defaultThickness: .004, defaultColor: [.09, .07, .05] });
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2)); renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.15;
   const scene = new THREE.Scene(); const cam = new THREE.PerspectiveCamera(30, 1, .1, 50);
-  scene.add(new THREE.HemisphereLight(0xdde6f0, 0x5a4a3c, 1.4)); const key = new THREE.DirectionalLight(0xfff0dc, 2.2); key.position.set(2, 3, 3); scene.add(key);
-  const rim = new THREE.DirectionalLight(0x9fc4ff, 1.2); rim.position.set(-2, 2, -2); scene.add(rim);
+  scene.add(new THREE.HemisphereLight(0xffe6c8, 0x6a4b30, 1.6)); const key = new THREE.DirectionalLight(0xffd29a, 2.6); key.position.set(2, 3, 3); scene.add(key);
+  const rim = new THREE.DirectionalLight(0xa9c8ff, 1.4); rim.position.set(-2, 2, -2); scene.add(rim);
   const mats = new Materials(lowQ); const b = new Builder(mats);
   const disc = new THREE.Mesh(new THREE.CylinderGeometry(.7, .75, .06, 40), mats.get('dark')); disc.position.y = -.03; scene.add(disc);
   let avatar: Avatar | null = null; let helmetOn = false; let view: 'cialo' | 'twarz' = 'cialo'; let rotY = .4, drag: number | null = null;
@@ -103,7 +101,7 @@ export function creatorScreen(root: HTMLElement, backend: Backend, lowQ: boolean
     cam.position.set(Math.sin(.15) * camD, camY + (view === 'twarz' ? .03 : .15), Math.cos(.15) * camD); cam.lookAt(0, camY, 0);
     if (avatar) { avatar.group.rotation.y = rotY; avatar.animate(1 / 60, 0); }
     if (drag === null && !matchMedia('(prefers-reduced-motion: reduce)').matches) rotY += .003;
-    outline.render(scene, cam);
+    renderer.render(scene, cam);
     (window as unknown as { __frames: number }).__frames = ((window as unknown as { __frames: number }).__frames || 0) + 1;
   };
   loop();

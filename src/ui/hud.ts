@@ -14,6 +14,9 @@ export class Hud {
   private swingBar: HTMLElement; private swingTxt: HTMLElement; private heightTxt: HTMLElement; private loadTxt: HTMLElement;
   private gearBtns: HTMLButtonElement[] = [];
   private attachBtn: HTMLButtonElement;
+  private craneTitle: HTMLElement; private choiceBox: HTMLElement; private liftBox: HTMLElement;
+  private bubble: HTMLElement; private tiltTxt: HTMLElement; private liftState: HTMLElement; private chainBtns: HTMLElement;
+  private remoteBtn: HTMLButtonElement;
   private roomEl: HTMLElement;
   private hoistPad: HTMLElement; private runBtn: HTMLButtonElement;
   private raf = 0; private offs: (() => void)[] = [];
@@ -41,18 +44,29 @@ export class Hud {
 
     // panel suwnicy
     this.swingBar = h('i'); this.swingTxt = h('span', { class: 'num' }); this.heightTxt = h('span', { class: 'num' }); this.loadTxt = h('span', { class: 'num' });
-    for (const g of [1, 2] as const) this.gearBtns.push(h('button', { class: 'btn gear', type: 'button', text: g === 1 ? 'Bieg 1 · wolny' : 'Bieg 2 · szybki', onclick: () => game.crane.setGear(g) }));
+    for (const g of [1, 2] as const) this.gearBtns.push(h('button', { class: 'btn gear', type: 'button', text: g === 1 ? 'Bieg 1 · wolny' : 'Bieg 2 · szybki', onclick: () => game.remote?.setGear(g) }));
     this.attachBtn = h('button', { class: 'btn pri', type: 'button', text: 'Zaczep', onclick: () => game.input.fire('attach') });
+    this.craneTitle = h('div', { class: 'eyebrow ctitle' });
+    this.choiceBox = h('div', { class: 'choice', hidden: true });
+    this.bubble = h('i'); this.tiltTxt = h('span', { class: 'num' }); this.liftState = h('div', { class: 'small' }); this.chainBtns = h('div', { class: 'chains' });
+    const holdC = (label: string, key: string) => { const b = h('button', { class: 'btn hold', type: 'button', text: label }); const on = (e: Event) => { e.preventDefault(); game.input.hold(key, true); }; const off = () => game.input.hold(key, false); b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off); b.addEventListener('pointercancel', off); b.addEventListener('pointerleave', off); return b; };
+    this.liftBox = h('div', { class: 'lift', hidden: true },
+      h('div', { class: 'row' }, h('span', { class: 'dim', text: 'Przechył formy' }), this.tiltTxt),
+      h('div', { class: 'level' }, h('b'), h('u'), this.bubble), this.liftState,
+      h('div', { class: 'dim small', text: 'Łańcuch:' }), this.chainBtns,
+      h('div', { class: 'acts' }, holdC('Luzuj ▼', 'chain-down'), holdC('Skróć ▲', 'chain-up')));
     this.cranePanel = h('section', { class: 'panel crane', hidden: true },
-      h('div', { class: 'eyebrow', text: 'Suwnica S-5 · 5 t' }),
+      this.craneTitle,
       h('div', { class: 'gears' }, ...this.gearBtns),
       h('div', { class: 'row' }, h('span', { class: 'dim', text: 'Bujanie' }), this.swingTxt),
       h('div', { class: 'bar' }, this.swingBar),
       h('div', { class: 'row' }, h('span', { class: 'dim', text: 'Wysokość haka' }), this.heightTxt),
       h('div', { class: 'row' }, h('span', { class: 'dim', text: 'Ładunek' }), this.loadTxt),
-      h('div', { class: 'acts' }, this.attachBtn, h('button', { class: 'btn', type: 'button', text: 'Odłóż kasetę', onclick: () => game.exitCrane() })),
-      !touch ? h('div', { class: 'keys' }, ...[['W A S D', 'jazda'], ['R / F', 'hak góra / dół'], ['Q', 'zmiana biegu'], ['Spacja', 'zaczep / odczep'], ['Esc', 'odłóż kasetę']].flatMap(([k, t]) => [h('span', { class: 'key', text: k }), h('span', { text: t })])) : null,
+      this.choiceBox, this.liftBox,
+      h('div', { class: 'acts' }, this.attachBtn, h('button', { class: 'btn', type: 'button', text: 'Chodzenie', onclick: () => game.exitCrane() })),
+      !touch ? h('div', { class: 'keys' }, ...[['W A S D', 'jazda'], ['R / F', 'hak góra / dół'], ['Q', 'zmiana biegu'], ['Spacja', 'zaczep / odczep'], ['1–4', 'wybór (zaczep / łańcuch)'], ['X / Z', 'skróć / luzuj łańcuch'], ['C / Esc', 'chodzenie z pilotem']].flatMap(([k, t]) => [h('span', { class: 'key', text: k }), h('span', { text: t })])) : null,
     );
+    this.remoteBtn = h('button', { class: 'btn remote', type: 'button', hidden: true, onclick: () => game.toggleControl() });
 
     // sterowanie dotykowe
     const knob = h('i'); const joy = h('div', { class: 'joy', 'aria-label': 'Gałka ruchu' }, knob);
@@ -70,18 +84,20 @@ export class Hud {
     const dev = opts.dev ? h('div', { class: 'devbadge', text: 'Wersja testowa: suwnica odblokowana dla wszystkich (docelowo od 500 pkt)' }) : null;
     const labelLayer = h('div', { class: 'labels' });
 
-    this.root = h('div', { class: 'hud' }, labelLayer, stats, topRight, this.cranePanel, this.prompt, this.toasts, keysHelp, touchUi, dev);
+    this.root = h('div', { class: 'hud' }, labelLayer, stats, topRight, this.cranePanel, this.prompt, this.remoteBtn, this.toasts, keysHelp, touchUi, dev);
     parent.append(this.root);
 
     // etykiety w świecie
     for (const l of game.world.labels) this.addLabel(labelLayer, l.text, () => l.pos, 'place');
     this.addLabel(labelLayer, character.name, () => game.playerPos().add(V(0, 2.3, 0)), 'me');
-    const lugTag = this.addLabel(labelLayer, 'Ucho zawiesia – zaczep', () => { if (game.mode !== 'crane') return null; const l = game.crane.attachable(); return l ? V(l.x, l.y + l.lugH + .3, l.z) : null; }, 'hint');
-    void lugTag;
+    this.addLabel(labelLayer, 'Tu możesz zaczepić', () => { if (game.mode !== 'crane' || !game.remote || game.remote.attached) return null; const o = game.remote.options(); return o.length ? game.remote.hookWorld().add(V(0, .5, 0)) : null; }, 'hint');
+    for (const c of game.cranes) this.addLabel(labelLayer, c.name, () => game.mode === 'crane' && game.remote !== c ? null : V(c.state.x, 3.9, c.state.z), 'crane-tag').style.setProperty('--cc', c.station.color);
 
     this.offs.push(
       bus.on('toast', t => this.toast(t.text, t.kind)),
-      bus.on('points:changed', p => { this.pointsEl.textContent = `${p.points} pkt`; this.toast(`${p.delta >= 0 ? '+' : ''}${p.delta} pkt za sypanie`, p.delta >= 0 ? 'ok' : 'bad'); }),
+      bus.on('points:changed', p => { this.pointsEl.textContent = `${p.points} pkt`; this.toast(`${p.delta >= 0 ? '+' : ''}${p.delta} pkt – ${p.reason ?? 'sypanie'}`, p.delta >= 0 ? 'ok' : 'bad'); }),
+      bus.on('crane:choice', c => { this.choiceBox.hidden = !c; this.choiceBox.replaceChildren(...(c ? [h('div', { class: 'dim small', text: 'Za co zaczepić?' }), ...c.options.map((t, i) => h('button', { class: 'btn pri', type: 'button', text: `${i + 1}. ${t}`, onclick: () => game.remote?.pick(i) }))] : [])); }),
+      bus.on('remote:changed', r => { this.remoteBtn.hidden = !r; if (r) { this.remoteBtn.style.setProperty('--cc', r.color); this.remoteBtn.innerHTML = `<span class="key">${touch ? '' : 'C'}</span> Steruj suwnicą`; } }),
       bus.on('game:pause', ({ paused }) => { this.root.classList.toggle('paused', paused); }),
       bus.on('interact:available', it => { this.prompt.hidden = !it; if (it) this.prompt.innerHTML = `<span class="key">${touch ? 'Dotknij' : 'E'}</span> ${it.label}`; }),
       bus.on('crane:enter', () => this.setCraneMode(true)),
@@ -96,8 +112,9 @@ export class Hud {
   }
 
   private setCraneMode(on: boolean) {
-    this.cranePanel.hidden = !on; this.hoistPad.hidden = !on; this.runBtn.hidden = on;
-    if (on) this.toast('Kaseta w ręku. Bieg 1 – precyzyjnie, bieg 2 – szybko, ale ładunek się buja.');
+    this.cranePanel.hidden = !on; this.hoistPad.hidden = !on; this.runBtn.hidden = on; this.remoteBtn.classList.toggle('hide-in-crane', on);
+    const c = this.game.remote;
+    if (on && c) { this.cranePanel.style.setProperty('--cc', c.station.color); this.craneTitle.textContent = `${c.name} · pilot`; this.toast('Steruj pilotem. Bieg 1 – precyzyjnie, bieg 2 – szybko, ale ładunek się buja.'); }
   }
 
   toast(text: string, kind: 'ok' | 'bad' | 'info' = 'info') {
@@ -116,17 +133,27 @@ export class Hud {
       l.el.style.display = ''; l.el.style.transform = `translate(${s.x}px,${s.y}px) translate(-50%,-100%)`;
     }
     if (this.roomEl.textContent !== g.room) this.roomEl.textContent = g.room;
-    if (g.mode === 'crane') {
-      const s = g.crane.state; const amp = Math.hypot(Math.sin(s.thX), Math.sin(s.thZ)) * (s.ropeTop - s.hookY);
+    const c = g.remote;
+    if (g.mode === 'crane' && c) {
+      const s = c.state; const amp = c.swing();
       this.swingTxt.textContent = amp.toFixed(2).replace('.', ',') + ' m';
       this.swingBar.style.width = Math.min(100, amp / .6 * 100) + '%';
       this.swingBar.parentElement!.classList.toggle('bad', amp > .25);
-      this.heightTxt.textContent = g.crane.hookWorld().y.toFixed(2).replace('.', ',') + ' m';
-      this.loadTxt.textContent = g.crane.attached ? `${g.crane.attached.name} · ${s.load?.resting ? 'stoi' : 'w górze'}` : 'brak';
+      this.heightTxt.textContent = c.hookWorld().y.toFixed(2).replace('.', ',') + ' m';
+      this.loadTxt.textContent = c.attached ? `${c.attachKind === 'form' ? 'Forma' : c.attached.name} · ${s.load?.resting ? 'stoi' : 'w górze'}` : 'brak';
       this.gearBtns.forEach((b, i) => b.classList.toggle('on', s.gear === i + 1));
-      const can = !!g.crane.attachable();
-      this.attachBtn.textContent = g.crane.attached ? 'Odczep' : 'Zaczep';
-      this.attachBtn.disabled = !g.crane.attached && !can;
+      this.attachBtn.textContent = c.attached ? 'Odczep' : 'Zaczep';
+      this.attachBtn.disabled = !c.attached && !c.options().length;
+      const lift = c.lift; this.liftBox.hidden = !lift;
+      if (lift) {
+        const t = c.tilt()!; const bal = g.balance.lift;
+        this.tiltTxt.textContent = t.mag.toFixed(1).replace('.', ',') + '°';
+        const k = 34 / bal.crackDeg; this.bubble.style.transform = `translate(${Math.max(-40, Math.min(40, -t.x * k))}px,${Math.max(-40, Math.min(40, t.z * k))}px)`;
+        this.liftBox.classList.toggle('warn', t.mag > bal.warnDeg); this.liftBox.classList.toggle('danger', t.mag > bal.crackDeg * .75);
+        this.liftState.textContent = lift.inModel ? `W modelu: ${Math.round(lift.lifted / lift.depth * 100)}% · kara ${Math.round(lift.penalty)} pkt` : 'Forma wyjęta – odłóż ją na paletę';
+        if (this.chainBtns.childElementCount !== lift.hooks.length) this.chainBtns.replaceChildren(...lift.hooks.map((hk, i) => h('button', { class: 'btn small', type: 'button', text: `${i + 1} · ${hk.x < -.05 ? 'lewy' : hk.x > .05 ? 'prawy' : hk.z < 0 ? 'tylny' : 'przedni'}`, onclick: () => c.selectChain(i) })));
+        [...this.chainBtns.children].forEach((b, i) => b.classList.toggle('on', lift.sel === i));
+      }
     }
   };
 
