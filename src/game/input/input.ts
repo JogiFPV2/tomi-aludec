@@ -2,6 +2,9 @@
  * Sterowanie: klawiatura (komputer) i gałka + przyciski na ekranie (telefon).
  * Reszta gry pyta tylko o „oś ruchu” i „akcje” – nie wie, skąd przyszły.
  */
+import { shapeStick, expoFor } from './stick';
+import { settings } from '../../core/settings';
+
 export type Action = 'use' | 'attach' | 'gear' | 'exit' | 'run' | 'control' | 'drop' | 'rotate' | 'sel1' | 'sel2' | 'sel3' | 'sel4';
 
 export class Input {
@@ -11,6 +14,8 @@ export class Input {
   private listeners: ((a: Action) => void)[] = [];
   private off: (() => void)[] = [];
   runToggle = false;
+  /** otwarte menu: gra nie reaguje na klawisze i gałkę */
+  blocked = false;
 
   constructor() {
     const kd = (e: KeyboardEvent) => {
@@ -40,14 +45,14 @@ export class Input {
   reset() { this.keys.clear(); this.held.clear(); this.joy.x = this.joy.y = 0; }
 
   onAction(fn: (a: Action) => void) { this.listeners.push(fn); }
-  fire(a: Action) { for (const fn of this.listeners) fn(a); }
-  private k(name: string) { return this.keys.has(name) || this.held.has(name) ? 1 : 0; }
+  fire(a: Action) { if (this.blocked) return; for (const fn of this.listeners) fn(a); }
+  private k(name: string) { return this.blocked ? 0 : this.keys.has(name) || this.held.has(name) ? 1 : 0; }
 
   /** Kierunek ruchu: x w prawo, z „w dół ekranu”. Długość 0..1. */
   move(): { x: number; z: number } {
     let x = this.k('d') + this.k('arrowright') - this.k('a') - this.k('arrowleft');
     let z = this.k('s') + this.k('arrowdown') - this.k('w') - this.k('arrowup');
-    if (this.joy.active) { x = this.joy.x; z = this.joy.y; }
+    if (this.joy.active && !this.blocked) { x = this.joy.x; z = this.joy.y; }
     const l = Math.hypot(x, z); if (l > 1) { x /= l; z /= l; }
     return { x, z };
   }
@@ -56,7 +61,8 @@ export class Input {
   chain(): -1 | 0 | 1 { const v = this.k('x') + this.k('chain-up') - this.k('z') - this.k('chain-down'); return v > 0 ? 1 : v < 0 ? -1 : 0; }
   running(): boolean { return this.keys.has('shift') || this.runToggle; }
 
-  setJoystick(x: number, y: number, active: boolean) { this.joy.x = x; this.joy.y = y; this.joy.active = active; }
+  /** Gałka na ekranie: martwa strefa + krzywa zależna od czułości z ustawień. */
+  setJoystick(x: number, y: number, active: boolean) { const s = shapeStick(x, y, .16, expoFor(settings.v.moveSens)); this.joy.x = s.x; this.joy.y = s.y; this.joy.active = active; }
   hold(name: string, on: boolean) { if (on) this.held.add(name); else this.held.delete(name); }
 
   dispose() { this.off.forEach(f => f()); this.listeners = []; }

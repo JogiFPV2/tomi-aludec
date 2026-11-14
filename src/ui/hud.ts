@@ -3,12 +3,14 @@ import type { Game } from '../game/Game';
 import type { EventBus } from '../core/events';
 import type { Character } from '../services/backend';
 import { V } from '../game/render/build';
+import { buildMenu } from './menu';
+import { settings } from '../core/settings';
 
 /** Interfejs na ekranie gry: statystyki, podpowiedzi, panel suwnicy, sterowanie dotykowe, etykiety. */
 export class Hud {
   root: HTMLElement;
   private labels: { el: HTMLElement; pos: () => ReturnType<typeof V> | null }[] = [];
-  private prompt: HTMLButtonElement;
+  private prompt: HTMLButtonElement; private menuEl!: HTMLElement;
   private toasts: HTMLElement;
   private cranePanel: HTMLElement;
   private swingBar: HTMLElement; private swingTxt: HTMLElement; private heightTxt: HTMLElement; private loadTxt: HTMLElement;
@@ -32,12 +34,15 @@ export class Hud {
       h('div', { class: 'row top' }, h('div', { class: 'title', text: character.name }), this.pointsEl),
       h('div', { class: 'row' }, h('span', { class: 'dim', text: 'Sypacz' }), this.roomEl),
     );
-    const menuBtn = h('button', { class: 'btn small', type: 'button', text: 'Wyloguj', onclick: () => opts.onLogout() });
-    const fsBtn = h('button', { class: 'btn small', type: 'button', text: touch ? '⛶' : 'Pełny ekran', 'aria-label': 'Pełny ekran', onclick: () => { const p = document.documentElement.requestFullscreen?.(); p?.catch(() => this.toast('Pełny ekran nie jest dostępny w tej przeglądarce')); } });
+    // menu gry (ustawienia, pełny ekran, wylogowanie) – jeden przycisk zamiast kilku
+    const menu = buildMenu({ touch, onClose: () => this.toggleMenu(false), onLogout: () => opts.onLogout(),
+      onFullscreen: () => { const p = document.documentElement.requestFullscreen?.(); p?.catch(() => this.toast('Pełny ekran nie jest dostępny w tej przeglądarce')); } });
+    this.menuEl = menu.el; this.offs.push(menu.dispose);
+    const menuBtn = h('button', { class: 'btn small menu-btn', type: 'button', 'aria-label': 'Menu gry', onclick: () => this.toggleMenu() }, h('span', { class: 'burger', text: '☰' }), h('span', { text: 'Menu' }));
     const zoom = h('div', { class: 'zoom' },
       h('button', { class: 'btn icon', type: 'button', 'aria-label': 'Oddal', text: '−', onclick: () => game.setZoom(game.zoom * 1.2) }),
       h('button', { class: 'btn icon', type: 'button', 'aria-label': 'Przybliż', text: '+', onclick: () => game.setZoom(game.zoom / 1.2) }));
-    const topRight = h('div', { class: 'top-right' }, zoom, fsBtn, menuBtn);
+    const topRight = h('div', { class: 'top-right' }, zoom, menuBtn);
     this.prompt = h('button', { class: 'prompt', type: 'button', hidden: true, onclick: () => game.input.fire('use') });
     this.toasts = h('div', { class: 'toasts', 'aria-live': 'polite' });
 
@@ -77,8 +82,9 @@ export class Hud {
 
     // sterowanie dotykowe
     const knob = h('i'); const joy = h('div', { class: 'joy', 'aria-label': 'Gałka ruchu' }, knob);
-    let pid = -1; const R = 52;
-    const setJoy = (e: PointerEvent) => { const r = joy.getBoundingClientRect(); let x = (e.clientX - r.left - r.width / 2) / R, y = (e.clientY - r.top - r.height / 2) / R; const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; } knob.style.transform = `translate(${x * R}px,${y * R}px)`; game.input.setJoystick(x, y, true); };
+    let pid = -1;
+    // większy skok gałki = spokojniejsze sterowanie; promień liczony z aktualnej wielkości gałki
+    const setJoy = (e: PointerEvent) => { const r = joy.getBoundingClientRect(); const R = r.width * .4; let x = (e.clientX - r.left - r.width / 2) / R, y = (e.clientY - r.top - r.height / 2) / R; const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; } knob.style.transform = `translate(${x * R}px,${y * R}px)`; game.input.setJoystick(x, y, true); };
     joy.addEventListener('pointerdown', e => { pid = e.pointerId; joy.setPointerCapture(pid); setJoy(e); });
     joy.addEventListener('pointermove', e => { if (e.pointerId === pid) setJoy(e); });
     const endJoy = () => { pid = -1; knob.style.transform = ''; game.input.setJoystick(0, 0, false); };
@@ -91,13 +97,13 @@ export class Hud {
     const side = touch ? h('div', { class: 'side' }, tray, this.runBtn, this.hoistPad, this.quickAttach, this.prompt) : h('div', { class: 'side' }, this.cranePanel, tray);
     const center = touch ? null : h('div', { class: 'center' }, this.prompt);
     // ściąga klawiszy: zwinięta do jednego przycisku, żeby nie zasłaniać hali
-    const helpBody = h('div', { class: 'keys', hidden: true }, ...[['W A S D', 'chodzenie'], ['Shift', 'bieg'], ['E', 'użyj / weź / podnieś'], ['G', 'puść paleciak / odłóż paletę'], ['T', 'obróć paletę'], ['C', 'pilot suwnicy'], ['Kółko myszy', 'przybliż / oddal']].flatMap(([k, t]) => [h('span', { class: 'key', text: k }), h('span', { text: t })]));
+    const helpBody = h('div', { class: 'keys', hidden: true }, ...[['M / Esc', 'menu i ustawienia'], ['W A S D', 'chodzenie'], ['Shift', 'bieg'], ['E', 'użyj / weź / podnieś'], ['G', 'puść paleciak / odłóż paletę'], ['T', 'obróć paletę'], ['C', 'pilot suwnicy'], ['Kółko myszy', 'przybliż / oddal']].flatMap(([k, t]) => [h('span', { class: 'key', text: k }), h('span', { text: t })]));
     const helpBtn = h('button', { class: 'btn small', type: 'button', text: '? Sterowanie', 'aria-expanded': 'false', onclick: () => { helpBody.hidden = !helpBody.hidden; helpBtn.setAttribute('aria-expanded', String(!helpBody.hidden)); helpBtn.textContent = helpBody.hidden ? '? Sterowanie' : '× Zwiń'; } });
     const keysHelp = !touch ? h('section', { class: 'help' }, helpBody, helpBtn) : null;
     const dev = opts.dev ? h('div', { class: 'devbadge', text: 'Wersja testowa – suwnica odblokowana' }) : null;
     const labelLayer = h('div', { class: 'labels' });
 
-    this.root = h('div', { class: 'hud' }, labelLayer, stats, topRight, touch ? this.cranePanel : null, side, center, this.toasts, keysHelp, touchUi, dev);
+    this.root = h('div', { class: 'hud' }, labelLayer, stats, topRight, touch ? this.cranePanel : null, side, center, this.toasts, keysHelp, touchUi, dev, this.menuEl);
     parent.append(this.root);
 
     // etykiety w świecie
@@ -106,6 +112,14 @@ export class Hud {
     this.addLabel(labelLayer, 'Tu możesz zaczepić', () => { if (game.mode !== 'crane' || !game.remote || game.remote.attached) return null; const o = game.remote.options(); return o.length ? game.remote.hookWorld().add(V(0, .5, 0)) : null; }, 'hint');
     for (const c of game.cranes) this.addLabel(labelLayer, c.name, () => game.mode === 'crane' && game.remote !== c ? null : V(c.state.x, 3.9, c.state.z), 'crane-tag').style.setProperty('--cc', c.station.color);
 
+    // ustawienia: wielkość interfejsu, układ dla leworęcznych, napisy nad miejscami
+    this.offs.push(settings.watch(s => {
+      document.documentElement.style.setProperty('--ui', String(s.uiScale));
+      document.body.classList.toggle('lefty', s.leftHanded);
+      labelLayer.classList.toggle('no-places', !s.labels);
+    }));
+    const key = (e: KeyboardEvent) => { const k = e.key.toLowerCase(); if (k === 'm' || (k === 'escape' && (!this.menuEl.hidden || game.mode === 'walk'))) { const t = e.target as HTMLElement | null; if (t && t.tagName === 'INPUT' && (t as HTMLInputElement).type !== 'range') return; this.toggleMenu(); } };
+    addEventListener('keydown', key); this.offs.push(() => removeEventListener('keydown', key));
     this.offs.push(
       bus.on('toast', t => this.toast(t.text, t.kind)),
       bus.on('points:changed', p => { this.pointsEl.textContent = `${p.points} pkt`; this.toast(`${p.delta >= 0 ? '+' : ''}${p.delta} pkt – ${p.reason ?? 'sypanie'}`, p.delta >= 0 ? 'ok' : 'bad'); }),
@@ -129,6 +143,12 @@ export class Hud {
     this.cranePanel.hidden = !on; this.hoistPad.hidden = !on; this.quickAttach.hidden = !on; this.runBtn.hidden = on; this.root.classList.toggle('in-crane', on); this.setRemoteLabel();
     const c = this.game.remote;
     if (on && c) { this.cranePanel.style.setProperty('--cc', c.station.color); this.craneTitle.textContent = `${c.name} · pilot`; this.toast('Steruj pilotem. Bieg 1 – precyzyjnie, bieg 2 – szybko, ale ładunek się buja.'); }
+  }
+
+  /** Otwiera / zamyka menu gry. Przy otwartym menu sterowanie jest puszczone. */
+  toggleMenu(open = this.menuEl.hidden) {
+    this.menuEl.hidden = !open; this.game.input.blocked = open; this.game.input.reset();
+    if (open) (this.menuEl.querySelector('button') as HTMLElement | null)?.focus();
   }
 
   private setRemoteLabel() {

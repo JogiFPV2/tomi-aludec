@@ -1,3 +1,5 @@
+import { shapeStick } from '../../game/input/stick';
+import { settings } from '../../core/settings';
 import * as THREE from 'three';
 import { h } from '../dom';
 import { Materials } from '../../game/render/materials';
@@ -107,7 +109,7 @@ class PourScreen {
     // gałka ramienia mieszarki (lewy dół) – palec nie zasłania modelu, który jest w prawym dole
     const knob = h('i'); const joy = h('div', { class: 'pjoy', 'aria-label': 'Ramię mieszarki – gałka' }, knob, h('span', { class: 'pjoy-lbl', text: 'Ramię' }));
     let pid = -1; const R = 50;
-    const setJoy = (e: PointerEvent) => { const r = joy.getBoundingClientRect(); let x = (e.clientX - r.left - r.width / 2) / R, y = (e.clientY - r.top - r.height / 2) / R; const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; } knob.style.transform = `translate(${x * R}px,${y * R}px)`; this.joy.x = x; this.joy.y = y; };
+    const setJoy = (e: PointerEvent) => { const r = joy.getBoundingClientRect(); let x = (e.clientX - r.left - r.width / 2) / R, y = (e.clientY - r.top - r.height / 2) / R; const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; } knob.style.transform = `translate(${x * R}px,${y * R}px)`; const q = shapeStick(x, y, .16, 1.9); this.joy.x = q.x; this.joy.y = q.y; };
     joy.addEventListener('pointerdown', e => { pid = e.pointerId; joy.setPointerCapture(pid); setJoy(e); });
     joy.addEventListener('pointermove', e => { if (e.pointerId === pid) setJoy(e); });
     const endJoy = () => { pid = -1; knob.style.transform = ''; this.joy.x = this.joy.y = 0; };
@@ -197,7 +199,7 @@ class PourScreen {
     const kx = (this.keys.has('d') || this.keys.has('arrowright') ? 1 : 0) - (this.keys.has('a') || this.keys.has('arrowleft') ? 1 : 0);
     const kz = (this.keys.has('s') || this.keys.has('arrowdown') ? 1 : 0) - (this.keys.has('w') || this.keys.has('arrowup') ? 1 : 0);
     const jx = kx + this.joy.x, jz = kz + this.joy.y;
-    if (jx || jz) s.setArmTarget(s.arm.tx + jx * s.bal.armSpeed * dt * 1.2, s.arm.tz + jz * s.bal.armSpeed * dt * 1.2);
+    if (jx || jz) { const k = s.bal.armSpeed * dt * 1.2 * settings.v.armSens; s.setArmTarget(s.arm.tx + jx * k, s.arm.tz + jz * k); }
     s.step(dt);
     this.render3d(); this.updateUi();
     (window as unknown as { __frames: number }).__frames = ((window as unknown as { __frames: number }).__frames || 0) + 1;

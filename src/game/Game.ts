@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 import { InkPass } from './render/ink';
+import { settings } from '../core/settings';
+import { approach } from './input/stick';
+import { turnToward } from './transport/stacking';
 import { Atmosphere, paperOverlay } from './render/atmosphere';
 import { Materials } from './render/materials';
 import { Builder, V } from './render/build';
@@ -18,7 +21,7 @@ export interface GameOptions { container: HTMLElement; backend: Backend; charact
 interface Interactable { id: string; label: string; pos: () => THREE.Vector3; radius: number; use: () => void }
 interface Nearby { id: string; label: string; use: () => void }
 /** Pochylenie kamery od pionu (widok z góry, lekko „od przodu”). */
-const CAM_TILT_DEG = 15, CAM_H = 34;
+const CAM_H = 34;
 
 /** Główny moduł gry: spina świat, postać, suwnicę, kamerę i pętlę. */
 export class Game {
@@ -31,6 +34,7 @@ export class Game {
   readonly yard: Yard;
   readonly transport: Transport;
   private hadJack = false;
+  private vel = { x: 0, z: 0 }; private unwatch: () => void = () => {};
   private ink: InkPass; private atmo: Atmosphere; private paper: HTMLElement; private craneLights: THREE.PointLight[] = [];
   /** suwnica, której pilota trzyma gracz */
   remote: Crane | null = null;
@@ -59,6 +63,7 @@ export class Game {
     // kontur tuszem (ciepły brąz zamiast czerni) i papierowe ziarno z winietą
     this.ink = new InkPass(this.renderer, lowQuality);
     this.paper = paperOverlay(); this.renderer.domElement.after(this.paper);
+    this.unwatch = settings.watch(s => { this.paper.hidden = !s.grain; });
 
     // ciepłe, „malowane” światło: złote słońce przez okna + ciepłe odbicia od podłogi
     // półmrok hali: chłodne, fioletowe cienie + ciepłe plamy światła (okna, lampy, żar z kadzi)
@@ -155,7 +160,7 @@ export class Game {
     if (this.transport.hand) { this.o.bus.emit('toast', { text: 'Masz zajęte ręce – najpierw odłóż paletę, potem sięgnij po pilota.', kind: 'bad' }); return; }
     this.mode = 'crane'; this.player.speed = 0; this.poseRemote(); this.o.bus.emit('crane:enter', { gear: this.remote.state.gear });
   }
-  exitCrane() { if (this.mode !== 'crane') return; this.mode = 'walk'; this.poseRemote(); const c = this.remote; if (c) { c.state.vx = c.state.vz = 0; c.pending = null; } this.o.bus.emit('crane:choice', null); this.o.bus.emit('crane:exit', undefined as never); }
+  exitCrane() { if (this.mode !== 'crane') return; this.mode = 'walk'; this.vel.x = this.vel.z = 0; this.poseRemote(); const c = this.remote; if (c) { c.state.vx = c.state.vz = 0; c.pending = null; } this.o.bus.emit('crane:choice', null); this.o.bus.emit('crane:exit', undefined as never); }
 
   private onAction(a: string) {
     if (!this.running || this.paused) return;
@@ -186,10 +191,14 @@ export class Game {
     const mv = this.input.move();
     if (this.mode === 'walk') {
       const bp = this.o.balance.player;
-      const speed = this.transport.speed(bp.walkSpeed, bp.runSpeed, this.input.running()) * Math.min(1, Math.hypot(mv.x, mv.z));
+      const speed = this.transport.speed(bp.walkSpeed, bp.runSpeed, this.input.running());
+      // płynne rozpędzanie i hamowanie (z paleciakiem wolniejsze) – postać nie szarpie przy drobnych ruchach kciuka
+      const acc = (this.transport.holding ? 6 : this.transport.hand ? 9 : 14) * dt;
+      this.vel.x = approach(this.vel.x, mv.x * speed, acc); this.vel.z = approach(this.vel.z, mv.z * speed, acc);
       const ox = this.player.x, oz = this.player.z;
-      let p = this.world.col.move(ox, oz, .3, mv.x * speed * dt, mv.z * speed * dt);
-      if (Math.hypot(mv.x, mv.z) > .1) this.player.heading = Math.atan2(mv.x, mv.z);
+      let p = this.world.col.move(ox, oz, .3, this.vel.x * dt, this.vel.z * dt);
+      // obrót: nie skokiem, tylko z ograniczoną prędkością; słabe wychylenie nie zmienia kierunku
+      if (Math.hypot(mv.x, mv.z) > .22) this.player.heading = turnToward(this.player.heading, Math.atan2(mv.x, mv.z), (this.transport.holding ? 4 : 9) * dt);
       // paleciak / palety: widły nie wjeżdżają w ściany, ładunek jedzie z paletą
       const q = this.transport.update(dt, { x: p.x, z: p.z, heading: this.player.heading });
       if (q.x !== p.x || q.z !== p.z) p = this.world.col.resolve(q.x, q.z, .3);
@@ -228,7 +237,7 @@ export class Game {
     const focus = this.mode === 'crane' && this.remote ? (() => { const h = this.remote.hookWorld(); return V(h.x, 0, h.z); })() : V(this.player.x, 0, this.player.z);
     this.camTarget.lerp(focus, snap ? 1 : 1 - Math.exp(-dt * 5));
     // widok z góry, lekko pochylony (kamera nad i trochę „za” – od strony +z)
-    this.camPos.set(this.camTarget.x, CAM_H, this.camTarget.z + CAM_H * Math.tan(CAM_TILT_DEG * Math.PI / 180));
+    this.camPos.set(this.camTarget.x, CAM_H, this.camTarget.z + CAM_H * Math.tan(settings.v.camTilt * Math.PI / 180));
     this.camera.position.copy(this.camPos); this.camera.lookAt(this.camTarget);
     this.sun.position.set(this.camTarget.x - 11, 15, this.camTarget.z - 13); this.sun.target.position.copy(this.camTarget);
   }
@@ -264,6 +273,6 @@ export class Game {
     this.renderer.domElement.removeEventListener('wheel', this.wheel);
     this.input.dispose(); this.avatar.dispose();
     this.scene.traverse(o => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose(); });
-    this.mats.dispose(); this.ink.dispose(); this.renderer.dispose(); this.renderer.domElement.remove(); this.paper.remove();
+    this.mats.dispose(); this.ink.dispose(); this.renderer.dispose(); this.renderer.domElement.remove(); this.paper.remove(); this.unwatch();
   }
 }
