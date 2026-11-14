@@ -2,7 +2,7 @@
  * Sterowanie: klawiatura (komputer) i gałka + przyciski na ekranie (telefon).
  * Reszta gry pyta tylko o „oś ruchu” i „akcje” – nie wie, skąd przyszły.
  */
-export type Action = 'use' | 'attach' | 'gear' | 'exit' | 'run' | 'control' | 'drop' | 'sel1' | 'sel2' | 'sel3' | 'sel4';
+export type Action = 'use' | 'attach' | 'gear' | 'exit' | 'run' | 'control' | 'drop' | 'rotate' | 'sel1' | 'sel2' | 'sel3' | 'sel4';
 
 export class Input {
   private keys = new Set<string>();
@@ -25,6 +25,7 @@ export class Input {
         if (k === 'escape') this.fire('exit');
         if (k === 'c') this.fire('control');
         if (k === 'g') this.fire('drop');
+        if (k === 't') this.fire('rotate');
         if (k >= '1' && k <= '4') this.fire(('sel' + k) as Action);
       }
       this.keys.add(k);

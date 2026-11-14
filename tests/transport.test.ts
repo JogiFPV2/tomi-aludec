@@ -31,6 +31,13 @@ describe('palety i stosy', () => {
     expect(placeAt(s, 0, 0, 1, bal, () => true)).toEqual({ kind: 'blocked', reason: 'occupied' });
     expect(placeAt(s, 0, 0, 1, bal, free, s[0]).kind).toBe('floor');
   });
+  it('obrócona paleta zajmuje inne miejsce', () => {
+    const s = [{ ...st('a', 0, 0), rot: true }];
+    expect(stackAt(s, .7, 0)).toBeNull();          // obrócona: szerokość 1,2 m
+    expect(stackAt(s, 0, .7)?.id).toBe('a');       // za to dłuższa wzdłuż z
+    expect(placeAt(s, 1.3, 0, 1, bal, free, null, true).kind).toBe('floor');   // dwie obrócone obok siebie mieszczą się
+    expect(placeAt(s, 1.3, 0, 1, bal, free, null, false).kind).toBe('blocked');
+  });
   it('takeTop nie zdejmie więcej, niż jest', () => {
     const a = st('a', 0, 0, 2);
     expect(takeTop(a, 1)).toBe(1); expect(a.count).toBe(1);

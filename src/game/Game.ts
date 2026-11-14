@@ -1,4 +1,6 @@
 import * as THREE from 'three';
+import { InkPass } from './render/ink';
+import { Atmosphere, paperOverlay } from './render/atmosphere';
 import { Materials } from './render/materials';
 import { Builder, V } from './render/build';
 import { World } from './world/world';
@@ -10,13 +12,13 @@ import { Input } from './input/input';
 import type { EventBus } from '../core/events';
 import type { Balance } from '../core/balance';
 import type { Backend, Character } from '../services/backend';
-import { ROOMS, SPAWN, MODELS, STATIONS, SLOT_X } from '../data/layout';
+import { ROOMS, SPAWN, MODELS, STATIONS, SLOT_X, LADLE } from '../data/layout';
 
 export interface GameOptions { container: HTMLElement; backend: Backend; character: Character; balance: Balance; bus: EventBus; lowQuality: boolean }
 interface Interactable { id: string; label: string; pos: () => THREE.Vector3; radius: number; use: () => void }
 interface Nearby { id: string; label: string; use: () => void }
 /** Pochylenie kamery od pionu (widok z góry, lekko „od przodu”). */
-const CAM_TILT_DEG = 10, CAM_H = 34;
+const CAM_TILT_DEG = 15, CAM_H = 34;
 
 /** Główny moduł gry: spina świat, postać, suwnicę, kamerę i pętlę. */
 export class Game {
@@ -29,6 +31,7 @@ export class Game {
   readonly yard: Yard;
   readonly transport: Transport;
   private hadJack = false;
+  private ink: InkPass; private atmo: Atmosphere; private paper: HTMLElement; private craneLights: THREE.PointLight[] = [];
   /** suwnica, której pilota trzyma gracz */
   remote: Crane | null = null;
   private remoteInHand: THREE.Group | null = null;
@@ -51,14 +54,18 @@ export class Game {
     this.renderer = new THREE.WebGLRenderer({ antialias: !lowQuality, powerPreference: 'high-performance', preserveDrawingBuffer: new URLSearchParams(location.search).has('zrzut') });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio || 1, lowQuality ? 1.25 : 2));
     this.renderer.shadowMap.enabled = true; this.renderer.shadowMap.type = lowQuality ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace; this.renderer.toneMapping = THREE.ACESFilmicToneMapping; this.renderer.toneMappingExposure = 1.18;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace; this.renderer.toneMapping = THREE.NoToneMapping; // rysunkowo: czyste, płaskie kolory bez filmowego wygaszania
     this.renderer.domElement.className = 'game-canvas'; container.prepend(this.renderer.domElement);
+    // kontur tuszem (ciepły brąz zamiast czerni) i papierowe ziarno z winietą
+    this.ink = new InkPass(this.renderer, lowQuality);
+    this.paper = paperOverlay(); this.renderer.domElement.after(this.paper);
 
     // ciepłe, „malowane” światło: złote słońce przez okna + ciepłe odbicia od podłogi
-    this.scene.background = new THREE.Color(0x221b16);
-    this.scene.add(new THREE.HemisphereLight(0xffe2bd, 0x6a4b30, 1.55));
-    this.scene.add(new THREE.AmbientLight(0xffd9b0, .25));
-    this.sun = new THREE.DirectionalLight(0xffc98a, 3.1); this.sun.castShadow = true; this.sun.shadow.radius = 4;
+    // półmrok hali: chłodne, fioletowe cienie + ciepłe plamy światła (okna, lampy, żar z kadzi)
+    this.scene.background = new THREE.Color(0x1a1420);
+    this.scene.add(new THREE.HemisphereLight(0xfff0dc, 0x6a5a9a, 1.25));
+    this.scene.add(new THREE.AmbientLight(0x8f86b8, .45));
+    this.sun = new THREE.DirectionalLight(0xffd9aa, 1.7); this.sun.castShadow = true; this.sun.shadow.radius = 3;
     const sz = lowQuality ? 1024 : 2048; this.sun.shadow.mapSize.set(sz, sz);
     Object.assign(this.sun.shadow.camera, { left: -16, right: 16, top: 16, bottom: -16, near: 1, far: 60 }); this.sun.shadow.bias = -.0005; this.sun.shadow.normalBias = .03;
     this.scene.add(this.sun, this.sun.target, this.camera);
@@ -72,6 +79,8 @@ export class Game {
     this.yard.palletTopAt = (x, z) => this.transport.palletTopAt(x, z);
     for (const st of STATIONS) { const c = new Crane(b, o.bus, this.yard, (x, z) => Math.max(this.world.supportAt(x, z), this.transport.supportAt(x, z)), st, o.balance); this.cranes.push(c); this.scene.add(c.group); }
     this.offPour = o.bus.on('pour:finished', r => { const l = this.yard.loads.find(x => x.id === r.loadId); if (l) this.yard.fillModel(l, { hooks: r.hooks, seed: Math.floor(Math.random() * 1e9), points: r.points }); });
+    this.atmo = new Atmosphere(b, lowQuality); this.scene.add(this.atmo.group); this.world.col.addCircle({ x: LADLE.x, z: LADLE.z, r: 1 }); this.world.labels.push({ text: 'Kadź z aluminium', pos: V(LADLE.x, 1.9, LADLE.z) });
+    if (!lowQuality) for (const c of this.cranes) { const l = new THREE.PointLight(new THREE.Color(c.station.color), 4, 6, 1.6); this.scene.add(l); this.craneLights.push(l); }
     this.avatar = buildAvatar(b, o.character.appearance, o.lowQuality); this.avatar.setHelmet(true); this.scene.add(this.avatar.group);
 
     const lp = o.character.last_position;
@@ -126,25 +135,32 @@ export class Game {
     if (this.remote) { bus.emit('toast', { text: `Masz już pilota (${this.remote.name}). Najpierw go odłóż.`, kind: 'bad' }); return; }
     if (!this.craneUnlocked()) { bus.emit('crane:locked', { needPoints: this.o.balance.crane.unlockPoints, havePoints: this.o.character.points }); return; }
     c.remoteTaken = true; c.remoteOnStand.visible = false; this.setRemote(c);
-    bus.emit('toast', { text: `Masz pilota – ${c.name}. Steruj z dowolnego miejsca (C albo „Steruj suwnicą”).`, kind: 'ok' });
+    bus.emit('toast', { text: `Pilot przy pasie – ${c.name}. Masz go przy sobie, steruj z dowolnego miejsca (C albo „Steruj”).`, kind: 'ok' });
   }
   private setRemote(c: Crane | null) {
     if (this.remoteInHand) { this.avatar.group.remove(this.remoteInHand); this.remoteInHand = null; }
     this.remote = c;
-    if (c) { const r = Crane.remoteMesh(new Builder(this.mats), c.colorMat); r.position.set(.28, .95, .18); r.rotation.x = -.6; r.scale.setScalar(1.3); this.avatar.group.add(r); this.remoteInHand = r; }
+    if (c) { const r = Crane.remoteMesh(new Builder(this.mats), c.colorMat); r.scale.setScalar(1.3); this.avatar.group.add(r); this.remoteInHand = r; this.poseRemote(); }
     this.o.bus.emit('remote:changed', c ? { stationId: c.station.id, color: c.station.color, name: c.name } : null);
+  }
+  /** Pilot: przy sterowaniu w ręku, poza tym wisi przy pasie (ręce wolne na palety i paleciak). */
+  private poseRemote() {
+    const r = this.remoteInHand; if (!r) return;
+    if (this.mode === 'crane') { r.position.set(.28, .95, .18); r.rotation.set(-.6, 0, 0); } else { r.position.set(.24, .8, -.04); r.rotation.set(Math.PI / 2, 0, -.35); }
   }
   /** Przełącza sterowanie suwnicą (pilot w ręku) ↔ chodzenie. */
   toggleControl() { if (this.mode === 'crane') this.exitCrane(); else this.enterCrane(); }
   enterCrane() {
     if (!this.remote) { this.o.bus.emit('toast', { text: 'Weź pilota suwnicy ze stojaka przy stanowisku.', kind: 'info' }); return; }
-    this.mode = 'crane'; this.player.speed = 0; this.o.bus.emit('crane:enter', { gear: this.remote.state.gear });
+    if (this.transport.hand) { this.o.bus.emit('toast', { text: 'Masz zajęte ręce – najpierw odłóż paletę, potem sięgnij po pilota.', kind: 'bad' }); return; }
+    this.mode = 'crane'; this.player.speed = 0; this.poseRemote(); this.o.bus.emit('crane:enter', { gear: this.remote.state.gear });
   }
-  exitCrane() { if (this.mode !== 'crane') return; this.mode = 'walk'; const c = this.remote; if (c) { c.state.vx = c.state.vz = 0; c.pending = null; } this.o.bus.emit('crane:choice', null); this.o.bus.emit('crane:exit', undefined as never); }
+  exitCrane() { if (this.mode !== 'crane') return; this.mode = 'walk'; this.poseRemote(); const c = this.remote; if (c) { c.state.vx = c.state.vz = 0; c.pending = null; } this.o.bus.emit('crane:choice', null); this.o.bus.emit('crane:exit', undefined as never); }
 
   private onAction(a: string) {
     if (!this.running || this.paused) return;
     if (a === 'control') { this.toggleControl(); return; }
+    if (a === 'rotate') { if (this.mode === 'walk') this.transport.rotate(); return; }
     if (a === 'drop') { if (this.mode === 'walk') { this.transport.release(this.player); this.hadJack = !!this.transport.holding; } return; }
     if (this.mode === 'crane' && this.remote) {
       const c = this.remote;
@@ -162,7 +178,7 @@ export class Game {
     const now = performance.now(); const dt = Math.min(.05, (now - this.last) / 1000); this.last = now;
     if (!this.running || this.paused) return;
     this.update(dt);
-    this.renderer.render(this.scene, this.camera);
+    this.ink.render(this.scene, this.camera);
     (window as unknown as { __frames: number }).__frames = ((window as unknown as { __frames: number }).__frames || 0) + 1;
   };
 
@@ -202,6 +218,8 @@ export class Game {
     this.avatar.animate(dt, this.player.speed);
     const room = ROOMS.find(r => this.player.x >= r.x0 && this.player.x <= r.x1 && this.player.z >= r.z0 && this.player.z <= r.z1)?.name ?? '';
     if (room !== this.room) this.room = room;
+    this.atmo.update(dt);
+    this.craneLights.forEach((l, i) => { const c = this.cranes[i]; l.position.set(c.state.x, 1.9, c.state.z); l.intensity = 3 + Math.min(1, Math.hypot(c.state.vx, c.state.vz)) * 9 * (.6 + .4 * Math.sin(performance.now() / 90)); });
     this.updateCamera(dt);
     this.saveT += dt; if (this.saveT > 15) { this.saveT = 0; this.savePosition(); }
   }
@@ -212,7 +230,7 @@ export class Game {
     // widok z góry, lekko pochylony (kamera nad i trochę „za” – od strony +z)
     this.camPos.set(this.camTarget.x, CAM_H, this.camTarget.z + CAM_H * Math.tan(CAM_TILT_DEG * Math.PI / 180));
     this.camera.position.copy(this.camPos); this.camera.lookAt(this.camTarget);
-    this.sun.position.set(this.camTarget.x - 12, 22, this.camTarget.z - 6); this.sun.target.position.copy(this.camTarget);
+    this.sun.position.set(this.camTarget.x - 11, 15, this.camTarget.z - 13); this.sun.target.position.copy(this.camTarget);
   }
 
   /** Po wzięciu paleciaka gracz staje za dyszlem. */
@@ -227,7 +245,7 @@ export class Game {
     // na wąskim ekranie (telefon pionowo) pokaż więcej w poziomie
     const vh = this.zoom * (a < 1 ? 1.35 : 1);
     this.camera.top = vh / 2; this.camera.bottom = -vh / 2; this.camera.left = -vh / 2 * a; this.camera.right = vh / 2 * a; this.camera.updateProjectionMatrix();
-    this.renderer.setSize(w, h, false);
+    this.renderer.setSize(w, h, false); this.ink.setSize(w, h, this.renderer.getPixelRatio(), this.camera);
   };
 
   private onHide = () => { if (document.visibilityState === 'hidden') this.savePosition(); };
@@ -246,6 +264,6 @@ export class Game {
     this.renderer.domElement.removeEventListener('wheel', this.wheel);
     this.input.dispose(); this.avatar.dispose();
     this.scene.traverse(o => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose(); });
-    this.mats.dispose(); this.renderer.dispose(); this.renderer.domElement.remove();
+    this.mats.dispose(); this.ink.dispose(); this.renderer.dispose(); this.renderer.domElement.remove(); this.paper.remove();
   }
 }

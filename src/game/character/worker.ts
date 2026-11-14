@@ -10,7 +10,7 @@ import type { Avatar } from './avatar';
  */
 
 /** powiększenie głowy postaci (styl bajkowy) */
-export const HEAD_SCALE = 2.05;
+export const HEAD_SCALE = 2.45;
 
 let assetP: Promise<HumanAsset> | null = null;
 let asset: HumanAsset | null = null;
@@ -67,7 +67,7 @@ export function buildWorker(mats: Materials, a: Appearance, lowQ = false): Avata
 
   let helmet: THREE.Group | null = null;
   const h = buildHuman(as, appearanceShape(a), {
-    skin: a.skin, eyeColor: a.eyeColor, shells,
+    skin: a.skin, eyeColor: a.eyeColor, shells, gradientMap: mats.gradient,
     extras: b => {
       addBrows(b, a.hairColor, { thick: a.body === 'k' ? .75 : 1 });
       helmet = addHelmet(b, mats, a);

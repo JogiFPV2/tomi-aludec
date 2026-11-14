@@ -16,7 +16,7 @@ export class Hud {
   private attachBtn: HTMLButtonElement;
   private craneTitle: HTMLElement; private choiceBox: HTMLElement; private liftBox: HTMLElement;
   private bubble: HTMLElement; private tiltTxt: HTMLElement; private liftState: HTMLElement; private chainBtns: HTMLElement;
-  private remoteBtn: HTMLButtonElement; private dropBtn: HTMLButtonElement; private quickAttach: HTMLButtonElement; private touch: boolean;
+  private remoteBtn: HTMLButtonElement; private dropBtn: HTMLButtonElement; private rotBtn: HTMLButtonElement; private quickAttach: HTMLButtonElement; private touch: boolean;
   private roomEl: HTMLElement;
   private hoistPad: HTMLElement; private runBtn: HTMLButtonElement;
   private raf = 0; private offs: (() => void)[] = [];
@@ -65,8 +65,14 @@ export class Hud {
       h('div', { class: 'acts' }, this.attachBtn, h('button', { class: 'btn', type: 'button', text: 'Chodzenie', onclick: () => game.exitCrane() })),
       !touch ? h('div', { class: 'keys' }, ...[['W A S D', 'jazda'], ['R / F', 'hak góra / dół'], ['Q', 'zmiana biegu'], ['Spacja', 'zaczep / odczep'], ['1–4', 'wybór (zaczep / łańcuch)'], ['X / Z', 'skróć / luzuj łańcuch'], ['C / Esc', 'chodzenie z pilotem']].flatMap(([k, t]) => [h('span', { class: 'key', text: k }), h('span', { text: t })])) : null,
     );
-    this.remoteBtn = h('button', { class: 'btn act remote', type: 'button', hidden: true, onclick: () => game.toggleControl() });
-    this.dropBtn = h('button', { class: 'btn act drop', type: 'button', hidden: true, onclick: () => game.input.fire('drop') });
+    this.remoteBtn = h('button', { class: 'btn act remote', type: 'button', onclick: () => game.toggleControl() });
+    this.dropBtn = h('button', { class: 'btn act drop', type: 'button', onclick: () => game.input.fire('drop') });
+    this.rotBtn = h('button', { class: 'btn act rot', type: 'button', onclick: () => game.input.fire('rotate') }, ...(touch ? [] : [h('span', { class: 'key', text: 'T' })]), h('span', { text: 'Obróć' }));
+    // „przy sobie”: co gracz ma w rękach i przy pasie – stan i przyciski w jednym miejscu
+    const remoteName = h('span'); const handsName = h('span');
+    const slotRemote = h('div', { class: 'slot remote', hidden: true }, h('div', { class: 'slot-h' }, h('i', { class: 'dot' }), remoteName), this.remoteBtn);
+    const slotHands = h('div', { class: 'slot hands', hidden: true }, h('div', { class: 'slot-h' }, handsName), h('div', { class: 'slot-b' }, this.dropBtn, this.rotBtn));
+    const tray = h('div', { class: 'tray' }, slotHands, slotRemote);
     this.quickAttach = h('button', { class: 'btn pri act attach', type: 'button', hidden: true, text: 'Zaczep', onclick: () => game.input.fire('attach') });
 
     // sterowanie dotykowe
@@ -82,12 +88,16 @@ export class Hud {
     this.runBtn = h('button', { class: 'btn act run', type: 'button', text: 'Bieg', onclick: () => { game.input.runToggle = !game.input.runToggle; this.runBtn.classList.toggle('on', game.input.runToggle); } });
     const touchUi = touch ? h('div', { class: 'touch-ui' }, joy) : null;
     // przyciski akcji: na telefonie pod prawym kciukiem (główna akcja najniżej), na komputerze na dole pośrodku
-    const actions = h('div', { class: 'actions' }, this.prompt, touch ? this.quickAttach : null, touch ? this.hoistPad : null, this.dropBtn, this.remoteBtn, touch ? this.runBtn : null);
-    const keysHelp = !touch ? h('section', { class: 'panel help' }, h('div', { class: 'keys' }, ...[['W A S D', 'chodzenie'], ['Shift', 'bieg'], ['E', 'użyj / weź / podnieś'], ['G', 'puść paleciak / odłóż paletę'], ['C', 'pilot suwnicy'], ['Kółko myszy', 'przybliż / oddal']].flatMap(([k, t]) => [h('span', { class: 'key', text: k }), h('span', { text: t })]))) : null;
-    const dev = opts.dev ? h('div', { class: 'devbadge', text: 'Wersja testowa: suwnica odblokowana dla wszystkich (docelowo od 500 pkt)' }) : null;
+    const side = touch ? h('div', { class: 'side' }, tray, this.runBtn, this.hoistPad, this.quickAttach, this.prompt) : h('div', { class: 'side' }, this.cranePanel, tray);
+    const center = touch ? null : h('div', { class: 'center' }, this.prompt);
+    // ściąga klawiszy: zwinięta do jednego przycisku, żeby nie zasłaniać hali
+    const helpBody = h('div', { class: 'keys', hidden: true }, ...[['W A S D', 'chodzenie'], ['Shift', 'bieg'], ['E', 'użyj / weź / podnieś'], ['G', 'puść paleciak / odłóż paletę'], ['T', 'obróć paletę'], ['C', 'pilot suwnicy'], ['Kółko myszy', 'przybliż / oddal']].flatMap(([k, t]) => [h('span', { class: 'key', text: k }), h('span', { text: t })]));
+    const helpBtn = h('button', { class: 'btn small', type: 'button', text: '? Sterowanie', 'aria-expanded': 'false', onclick: () => { helpBody.hidden = !helpBody.hidden; helpBtn.setAttribute('aria-expanded', String(!helpBody.hidden)); helpBtn.textContent = helpBody.hidden ? '? Sterowanie' : '× Zwiń'; } });
+    const keysHelp = !touch ? h('section', { class: 'help' }, helpBody, helpBtn) : null;
+    const dev = opts.dev ? h('div', { class: 'devbadge', text: 'Wersja testowa – suwnica odblokowana' }) : null;
     const labelLayer = h('div', { class: 'labels' });
 
-    this.root = h('div', { class: 'hud' }, labelLayer, stats, topRight, this.cranePanel, actions, this.toasts, keysHelp, touchUi, dev);
+    this.root = h('div', { class: 'hud' }, labelLayer, stats, topRight, touch ? this.cranePanel : null, side, center, this.toasts, keysHelp, touchUi, dev);
     parent.append(this.root);
 
     // etykiety w świecie
@@ -100,8 +110,8 @@ export class Hud {
       bus.on('toast', t => this.toast(t.text, t.kind)),
       bus.on('points:changed', p => { this.pointsEl.textContent = `${p.points} pkt`; this.toast(`${p.delta >= 0 ? '+' : ''}${p.delta} pkt – ${p.reason ?? 'sypanie'}`, p.delta >= 0 ? 'ok' : 'bad'); }),
       bus.on('crane:choice', c => { this.choiceBox.hidden = !c; this.choiceBox.replaceChildren(...(c ? [h('div', { class: 'dim small', text: 'Za co zaczepić?' }), ...c.options.map((t, i) => h('button', { class: 'btn pri', type: 'button', text: `${i + 1}. ${t}`, onclick: () => game.remote?.pick(i) }))] : [])); }),
-      bus.on('remote:changed', r => { this.remoteBtn.hidden = !r; if (r) { this.remoteBtn.style.setProperty('--cc', r.color); this.setRemoteLabel(); } }),
-      bus.on('transport:changed', t => { this.dropBtn.hidden = !t; if (t) this.dropBtn.replaceChildren(...(touch ? [] : [h('span', { class: 'key', text: 'G' })]), h('span', { text: t.label })); }),
+      bus.on('remote:changed', r => { slotRemote.hidden = !r; if (r) { slotRemote.style.setProperty('--cc', r.color); remoteName.textContent = `Pilot · ${r.name}`; this.setRemoteLabel(); } }),
+      bus.on('transport:changed', t => { slotHands.hidden = !t; if (t) { handsName.textContent = t.what; this.dropBtn.replaceChildren(...(touch ? [] : [h('span', { class: 'key', text: 'G' })]), h('span', { text: t.label })); } }),
       bus.on('game:pause', ({ paused }) => { this.root.classList.toggle('paused', paused); }),
       bus.on('interact:available', it => { this.prompt.hidden = !it; if (it) this.prompt.replaceChildren(...(touch ? [] : [h('span', { class: 'key', text: 'E' })]), h('span', { text: it.label })); }),
       bus.on('crane:enter', () => this.setCraneMode(true)),
@@ -123,7 +133,7 @@ export class Hud {
 
   private setRemoteLabel() {
     const on = this.game.mode === 'crane';
-    this.remoteBtn.replaceChildren(...(this.touch ? [] : [h('span', { class: 'key', text: 'C' })]), h('span', { text: on ? 'Chodzenie' : 'Steruj suwnicą' }));
+    this.remoteBtn.replaceChildren(...(this.touch ? [] : [h('span', { class: 'key', text: 'C' })]), h('span', { text: on ? 'Chodzenie' : 'Steruj' }));
   }
 
   toast(text: string, kind: 'ok' | 'bad' | 'info' = 'info') {
@@ -142,6 +152,7 @@ export class Hud {
       l.el.style.display = ''; l.el.style.transform = `translate(${s.x}px,${s.y}px) translate(-50%,-100%)`;
     }
     if (this.roomEl.textContent !== g.room) this.roomEl.textContent = g.room;
+    const cr = g.transport.canRotate(); if (this.rotBtn.hidden === cr) this.rotBtn.hidden = !cr;
     const c = g.remote;
     if (g.mode === 'crane' && c) {
       const s = c.state; const amp = c.swing();

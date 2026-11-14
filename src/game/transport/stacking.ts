@@ -10,6 +10,8 @@ export interface Stack {
   count: number;
   /** uniesienie spodu nad posadzką (stos na widłach paleciaka) */
   lift: number;
+  /** paleta obrócona o 90° (dłuższy bok wzdłuż osi z) */
+  rot?: boolean;
 }
 
 export interface TransportBalance {
@@ -25,8 +27,11 @@ export interface TransportBalance {
 /** Wysokość wierzchu stosu nad posadzką. */
 export const topOf = (s: Stack) => s.lift + s.count * PALLET.h;
 
+/** Wymiary palety w osiach hali (z uwzględnieniem obrotu). */
+export const sizeOf = (rot?: boolean) => rot ? { w: PALLET.d, d: PALLET.w } : { w: PALLET.w, d: PALLET.d };
+
 /** Czy punkt leży nad stosem. */
-export const covers = (s: Stack, x: number, z: number, pad = 0) => Math.abs(x - s.x) <= PALLET.w / 2 + pad && Math.abs(z - s.z) <= PALLET.d / 2 + pad;
+export const covers = (s: Stack, x: number, z: number, pad = 0) => { const q = sizeOf(s.rot); return Math.abs(x - s.x) <= q.w / 2 + pad && Math.abs(z - s.z) <= q.d / 2 + pad; };
 
 /** Najwyższy stos pod punktem (albo null). */
 export function stackAt(stacks: Stack[], x: number, z: number): Stack | null {
@@ -46,15 +51,17 @@ export type Place = { kind: 'floor' } | { kind: 'merge'; target: Stack } | { kin
 
 /**
  * Co się stanie, gdy odłożymy `count` palet w punkcie (x, z):
- * – środek blisko środka innego stosu → dokładamy na ten stos (o ile nie jest pełny i nic na nim nie stoi),
+ * – środek blisko środka innego stosu → dokładamy na ten stos (o ile nie jest pełny i nic na nim nie stoi);
+ *   dokładane palety układają się tak jak stos (obrót stosu),
  * – zahacza o inny stos → nie da się,
  * – wolne miejsce → na posadzkę.
  */
-export function placeAt(stacks: Stack[], x: number, z: number, count: number, bal: Pick<TransportBalance, 'maxStack'>, occupied: (s: Stack) => boolean, skip?: Stack | null): Place {
+export function placeAt(stacks: Stack[], x: number, z: number, count: number, bal: Pick<TransportBalance, 'maxStack'>, occupied: (s: Stack) => boolean, skip?: Stack | null, rot?: boolean): Place {
+  const a = sizeOf(rot);
   for (const s of stacks) {
     if (s === skip) continue;
-    const dx = Math.abs(s.x - x), dz = Math.abs(s.z - z);
-    if (dx >= PALLET.w || dz >= PALLET.d) continue;
+    const q = sizeOf(s.rot); const dx = Math.abs(s.x - x), dz = Math.abs(s.z - z);
+    if (dx >= (a.w + q.w) / 2 || dz >= (a.d + q.d) / 2) continue;
     if (dx < .5 && dz < .45) {
       if (occupied(s)) return { kind: 'blocked', reason: 'occupied' };
       if (s.count + count > bal.maxStack) return { kind: 'blocked', reason: 'full' };

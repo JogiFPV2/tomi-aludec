@@ -4,7 +4,7 @@ import type { Yard, Load } from '../crane/yard';
 import type { CollisionWorld } from '../world/collision';
 import type { EventBus } from '../../core/events';
 import { STATIONS, SLOT_X, MODELS, PALLET_STACKS, JACKS, type JackSpawn } from '../../data/layout';
-import { PALLET, topOf, stackAt, nearestStack, placeAt, takeTop, turnToward, type Stack, type TransportBalance } from './stacking';
+import { PALLET, topOf, covers, stackAt, nearestStack, placeAt, takeTop, turnToward, type Stack, type TransportBalance } from './stacking';
 
 /**
  * Transport na hali: palety (stosy), noszenie palet w rękach i paleciaki (ręczne i elektryczne).
@@ -28,6 +28,9 @@ export class Transport {
   holding: Jack | null = null;
   /** palety niesione w rękach */
   hand = 0;
+  /** obrót palety niesionej w rękach (true = dłuższym bokiem wzdłuż osi z) */
+  handRot = false;
+  private ghost: THREE.Mesh;
   private handMesh = new THREE.Group();
   private n = 0;
 
@@ -36,11 +39,13 @@ export class Transport {
     for (const m of MODELS) this.addStack(m.x, m.z, 1);
     for (const j of JACKS) this.addJack(j);
     this.group.add(this.handMesh);
+    // podgląd miejsca, w którym paleta wyląduje po odłożeniu
+    this.ghost = b.box(PALLET.w, .03, PALLET.d, 'ghost', [0, .02, 0]); this.ghost.castShadow = false; this.ghost.visible = false; this.group.add(this.ghost);
   }
 
   // ---------- budowa ----------
-  addStack(x: number, z: number, count: number): StackV {
-    const s: StackV = { id: 'pal-' + (++this.n), x, z, count, lift: 0, mesh: new THREE.Group(), shown: -1, jack: null };
+  addStack(x: number, z: number, count: number, rot = false): StackV {
+    const s: StackV = { id: 'pal-' + (++this.n), x, z, count, lift: 0, rot, mesh: new THREE.Group(), shown: -1, jack: null };
     this.group.add(s.mesh); this.stacks.push(s); this.sync(s); return s;
   }
   private palletMesh(y: number): THREE.Group {
@@ -56,7 +61,7 @@ export class Transport {
       for (let i = 0; i < s.count; i++) s.mesh.add(this.palletMesh(i * PALLET.h));
       s.shown = s.count;
     }
-    s.mesh.position.set(s.x, s.lift, s.z);
+    s.mesh.position.set(s.x, s.lift, s.z); s.mesh.rotation.y = s.rot ? Math.PI / 2 : 0;
   }
   private removeStack(s: StackV) { this.group.remove(s.mesh); this.stacks = this.stacks.filter(x => x !== s); s.count = 0; s.shown = -1; s.mesh.traverse(o => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose(); }); }
 
@@ -83,7 +88,7 @@ export class Transport {
   // ---------- ładunki jadące na palecie ----------
   private riders(s: Stack): Load[] {
     const top = topOf(s);
-    return this.yard.loads.filter(l => !l.heldBy && Math.abs(l.x - s.x) <= PALLET.w / 2 && Math.abs(l.z - s.z) <= PALLET.d / 2 && Math.abs(l.y - top) < .04);
+    return this.yard.loads.filter(l => !l.heldBy && covers(s, l.x, l.z) && Math.abs(l.y - top) < .04);
   }
   private shift(ls: Load[], dx: number, dy: number, dz: number) { for (const l of ls) { l.x += dx; l.y += dy; l.z += dz; l.group.position.set(l.x, l.y, l.z); } }
   private moveStack(s: StackV, x: number, z: number, lift: number) {
@@ -110,10 +115,34 @@ export class Transport {
       j.x = x + d.x * HANDLE; j.z = z + d.z * HANDLE; this.place(j);
       if (j.carry) { const fp = this.forkPoint(j); this.moveStack(j.carry, fp.x, fp.z, this.bal.jackLift); }
     }
-    this.handMesh.visible = this.hand > 0;
-    if (this.hand) { const d = dir(p.heading); this.handMesh.position.set(x + d.x * .62, .95, z + d.z * .62); this.handMesh.rotation.y = p.heading + Math.PI / 2; }
+    this.handMesh.visible = this.hand > 0; this.ghost.visible = false;
+    if (this.hand) {
+      const d = dir(p.heading); this.handMesh.position.set(x + d.x * .62, .95, z + d.z * .62); this.handMesh.rotation.y = this.handRot ? Math.PI / 2 : 0;
+      const t = this.dropPoint({ x, z, heading: p.heading });
+      if (t.ok) { this.ghost.visible = true; this.ghost.position.set(t.x, t.y + .02, t.z); this.ghost.rotation.y = t.rot ? Math.PI / 2 : 0; }
+    }
     return { x, z };
   }
+  /** Gdzie wyląduje paleta z rąk: przed graczem; blisko stosu „przykleja się” do niego. */
+  private dropPoint(p: P): { ok: boolean; x: number; z: number; y: number; rot: boolean; why?: string; target?: StackV } {
+    const d = dir(p.heading); const x = p.x + d.x * 1.15, z = p.z + d.z * 1.15;
+    const f = this.col.resolve(x, z, .5);
+    if (Math.hypot(f.x - x, f.z - z) > .12) return { ok: false, x, z, y: 0, rot: this.handRot, why: 'Tu nie ma miejsca na paletę – odsuń się od ściany lub maszyny.' };
+    const pl = placeAt(this.stacks, x, z, this.hand, this.bal, s => this.riders(s).length > 0 || !!(s as StackV).jack, null, this.handRot);
+    if (pl.kind === 'blocked') return { ok: false, x, z, y: 0, rot: this.handRot, why: pl.reason === 'full' ? `Stos jest pełny (maks. ${this.bal.maxStack} palet).` : pl.reason === 'occupied' ? 'Na tej palecie coś stoi.' : 'Paleta zahacza o inną – podejdź bliżej stosu albo odsuń się.' };
+    if (pl.kind === 'merge') { const t = pl.target as StackV; return { ok: true, x: t.x, z: t.z, y: topOf(t), rot: !!t.rot, target: t }; }
+    return { ok: true, x, z, y: 0, rot: this.handRot };
+  }
+  /** Obrót palety o 90°: niesionej w rękach albo pustej na widłach. */
+  rotate() {
+    if (this.hand) { this.handRot = !this.handRot; return; }
+    const c = this.holding?.carry; if (!c) return;
+    if (this.riders(c).length) { this.bus.emit('toast', { text: 'Nie obrócisz palety, na której coś stoi.', kind: 'bad' }); return; }
+    c.rot = !c.rot; this.sync(c);
+  }
+  /** Czy da się teraz obrócić paletę (przycisk „Obróć”). */
+  canRotate(): boolean { return this.hand > 0 || !!this.holding?.carry; }
+
   private setHand(n: number) {
     this.hand = n;
     for (const c of [...this.handMesh.children]) { this.handMesh.remove(c); c.traverse(o => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose(); }); }
@@ -121,7 +150,7 @@ export class Transport {
     this.changed();
   }
   private changed() {
-    this.bus.emit('transport:changed', this.holding ? { holding: 'jack', label: 'Puść paleciak' } : this.hand ? { holding: 'hand', label: this.hand > 1 ? 'Odłóż palety' : 'Odłóż paletę' } : null);
+    this.bus.emit('transport:changed', this.holding ? { holding: 'jack', label: 'Puść paleciak', what: this.holding.kind === 'electric' ? 'Paleciak elektryczny' : 'Paleciak ręczny' } : this.hand ? { holding: 'hand', label: this.hand > 1 ? 'Odłóż palety' : 'Odłóż paletę', what: this.hand > 1 ? '2 palety w rękach' : 'Paleta w rękach' } : null);
   }
 
   // ---------- akcje ----------
@@ -148,12 +177,12 @@ export class Transport {
     if (this.hand) {
       if (this.hand >= this.bal.handMax) return null;
       const s = nearestStack(this.stacks.filter(free), p.x, p.z, 1.5) as StackV | null;
-      return s ? { id: 'take2-' + s.id, label: 'Weź drugą paletę', dist: 0, run: () => this.takeByHand(s) } : null;
+      return s ? { id: 'take2-' + s.id, label: 'Podnieś drugą paletę', dist: 0, run: () => this.takeByHand(s) } : null;
     }
     let best: TAction | null = null;
     for (const jk of this.jacks) { const d = Math.hypot(jk.x - p.x, jk.z - p.z); if (d < 1.3 && (!best || d < best.dist)) best = { id: 'jack-' + jk.id, label: `Weź ${jackName(jk.kind)}`, dist: d, run: () => this.takeJack(jk, p) }; }
     const s = nearestStack(this.stacks.filter(free), p.x, p.z, 1.4) as StackV | null;
-    if (s) { const d = Math.hypot(s.x - p.x, s.z - p.z); if (!best || d < best.dist) best = { id: 'take-' + s.id, label: s.count > 1 ? `Weź paletę ze stosu (${s.count})` : 'Weź paletę', dist: d, run: () => this.takeByHand(s) }; }
+    if (s) { const d = Math.hypot(s.x - p.x, s.z - p.z); if (!best || d < best.dist) best = { id: 'take-' + s.id, label: s.count > 1 ? `Podnieś paletę ze stosu (${s.count})` : 'Podnieś paletę', dist: d, run: () => this.takeByHand(s) }; }
     return best;
   }
 
@@ -161,13 +190,10 @@ export class Transport {
   release(p: P) {
     if (this.holding) { const j = this.holding; this.holding = null; this.changed(); this.bus.emit('toast', { text: `Zostawiasz ${jackName(j.kind)}${j.carry ? ' z paletą' : ''}.` }); return; }
     if (!this.hand) return;
-    const d = dir(p.heading); const x = p.x + d.x * 1.05, z = p.z + d.z * 1.05;
-    const f = this.col.resolve(x, z, .5);
-    if (Math.hypot(f.x - x, f.z - z) > .12) { this.bus.emit('toast', { text: 'Tu nie ma miejsca na paletę – odsuń się od ściany lub maszyny.', kind: 'bad' }); return; }
-    const pl = placeAt(this.stacks, x, z, this.hand, this.bal, s => this.riders(s).length > 0 || !!(s as StackV).jack);
-    if (pl.kind === 'blocked') { this.bus.emit('toast', { text: pl.reason === 'full' ? `Stos jest pełny (maks. ${this.bal.maxStack} palet).` : pl.reason === 'occupied' ? 'Na tej palecie coś stoi.' : 'Paleta zahacza o inną – podejdź bliżej stosu albo odsuń się.', kind: 'bad' }); return; }
-    if (pl.kind === 'merge') { const t = pl.target as StackV; t.count += this.hand; this.sync(t); this.bus.emit('toast', { text: `Paleta odłożona na stos (${t.count}).`, kind: 'ok' }); }
-    else { this.addStack(x, z, this.hand); this.bus.emit('toast', { text: this.hand > 1 ? 'Palety odłożone.' : 'Paleta odłożona.', kind: 'ok' }); }
+    const t = this.dropPoint(p);
+    if (!t.ok) { this.bus.emit('toast', { text: t.why!, kind: 'bad' }); return; }
+    if (t.target) { t.target.count += this.hand; this.sync(t.target); this.bus.emit('toast', { text: `Paleta odłożona na stos (${t.target.count}).`, kind: 'ok' }); }
+    else { this.addStack(t.x, t.z, this.hand, t.rot); this.bus.emit('toast', { text: this.hand > 1 ? 'Palety odłożone.' : 'Paleta odłożona.', kind: 'ok' }); }
     this.setHand(0);
   }
 
@@ -182,16 +208,17 @@ export class Transport {
 
   private takeByHand(s: StackV) {
     const k = takeTop(s, 1); if (!k) return;
+    if (!this.hand) this.handRot = !!s.rot;
     if (s.count === 0) this.removeStack(s); else this.sync(s);
     this.setHand(this.hand + k);
-    this.bus.emit('toast', { text: this.hand > 1 ? 'Niesiesz dwie palety – idziesz wolniej.' : 'Niesiesz paletę. Odłóż ją przyciskiem „Odłóż paletę”.' });
+    this.bus.emit('toast', { text: this.hand > 1 ? 'Niesiesz dwie palety – idziesz wolniej.' : 'Niesiesz paletę – idziesz wolniej. Żółty ślad pokazuje, gdzie ją odłożysz; możesz ją obrócić.' });
   }
   private liftStack(j: Jack, s: StackV) {
     j.carry = s; s.jack = j; const f = this.forkPoint(j); this.moveStack(s, f.x, f.z, this.bal.jackLift); this.place(j);
     this.bus.emit('toast', { text: 'Paleta na widłach.', kind: 'ok' });
   }
   private dropStack(j: Jack) {
-    const c = j.carry!; const pl = placeAt(this.stacks, c.x, c.z, c.count, this.bal, s => this.riders(s).length > 0 || !!(s as StackV).jack, c);
+    const c = j.carry!; const pl = placeAt(this.stacks, c.x, c.z, c.count, this.bal, s => this.riders(s).length > 0 || !!(s as StackV).jack, c, c.rot);
     if (pl.kind === 'blocked') { this.bus.emit('toast', { text: pl.reason === 'full' ? `Stos byłby za wysoki (maks. ${this.bal.maxStack} palet).` : pl.reason === 'occupied' ? 'Na tamtej palecie coś stoi.' : 'Paleta zahacza o inną – ustaw się równo nad stosem albo obok.', kind: 'bad' }); return; }
     j.carry = null; c.jack = null;
     if (pl.kind === 'merge') {

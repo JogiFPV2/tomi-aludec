@@ -23,7 +23,7 @@ export interface GameEvents {
   'points:changed': { points: number; delta: number; reason?: string };
   'game:pause': { paused: boolean };
   /** co gracz trzyma: paleciak albo palety w rękach */
-  'transport:changed': { holding: 'jack' | 'hand'; label: string } | null;
+  'transport:changed': { holding: 'jack' | 'hand'; label: string; what: string } | null;
 }
 export type CraneGear = 1 | 2;
 

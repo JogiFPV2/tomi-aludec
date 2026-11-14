@@ -14,7 +14,13 @@ type Px = (u: number, v: number, x: number, y: number, n: number) => [number, nu
 function make(size: number, fn: Px, rep: [number, number] = [1, 1]): THREE.CanvasTexture {
   const c = document.createElement('canvas'); c.width = c.height = size; const g = c.getContext('2d')!;
   const img = g.createImageData(size, size); const d = img.data;
-  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) { const r = fn(x / size, y / size, x, y, size); const i = (y * size + x) * 4; d[i] = r[0]; d[i + 1] = r[1]; d[i + 2] = r[2]; d[i + 3] = 255; }
+  // styl rysunkowy: kolory spłaszczone do kilku odcieni (plamy farby zamiast gładkich przejść)
+  // (spłaszczamy jasność, a odcień zostaje – bez kolorowych plam)
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const r = fn(x / size, y / size, x, y, size); const i = (y * size + x) * 4;
+    const lum = Math.max(1, r[0] * .3 + r[1] * .59 + r[2] * .11), k = (Math.round(lum / 20) * 20) / lum;
+    d[i] = cl(r[0] * k); d[i + 1] = cl(r[1] * k); d[i + 2] = cl(r[2] * k); d[i + 3] = 255;
+  }
   g.putImageData(img, 0, 0);
   const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rep[0], rep[1]); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }

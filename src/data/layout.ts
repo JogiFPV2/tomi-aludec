@@ -76,5 +76,7 @@ export const JACKS: JackSpawn[] = [
   { id: 'pr2', kind: 'manual', x: 21.6, z: 13.4, heading: Math.PI / 2 },
   { id: 'pe1', kind: 'electric', x: 27.5, z: 20.3, heading: -Math.PI / 2 },
 ];
+/** Kadź z ciekłym aluminium (źródło żaru i iskier). */
+export const LADLE = { x: 34.4, z: 9.4 };
 export const SPAWN = { x: -6, z: 21.5 };
 export const CRANE_START_Z = 10;

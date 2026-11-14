@@ -2,9 +2,9 @@ import * as THREE from 'three';
 import { buildTextures, type TexKey } from './textures';
 
 /**
- * Biblioteka materiałów w stylu „malowanej bajki 3D” (jak grafika referencyjna):
- * miękkie, fizyczne cieniowanie, ręcznie malowane tekstury, ciepłe światło, bez konturów.
- * r – szorstkość (0 gładki, 1 matowy), m – metaliczność.
+ * Biblioteka materiałów w stylu rysunkowym: cieniowanie w kilku tonach, ręcznie malowane tekstury,
+ * kontur tuszem (OutlineEffect w Game) i dynamiczne światło (lampy, żar z kadzi).
+ * Pola r i m zostały z poprzedniego stylu – nie są używane.
  */
 interface MatDef { c: number; t?: TexKey; tint?: number; emit?: number; transparent?: number; e?: number; r?: number; m?: number }
 const DEFS: Record<string, MatDef> = {
@@ -17,8 +17,9 @@ const DEFS: Record<string, MatDef> = {
   hivis: { c: 0xc9d21c }, reflect: { c: 0xb8bcbe }, pallet: { c: 0x8e6a42, t: 'wood', tint: 0xffffff }, locker: { c: 0x7f8a8f, t: 'steel', tint: 0xb6c2c8 },
   lockerBlue: { c: 0x3e6f9e, t: 'steel', tint: 0x7fa7d0 }, bench: { c: 0x8e6a42, t: 'wood', tint: 0xffffff }, rack: { c: 0x2f5fa0 }, rackBeam: { c: 0xe0661c },
   eyeW: { c: 0xece8e2 }, pupil: { c: 0x0a0a0a }, lip: { c: 0x9c5d50 }, frame: { c: 0x151515 }, lens: { c: 0xb8d4e8, transparent: .3, r: .1 },
-  redBtn: { c: 0xd2261c, e: 0x200000 }, lamp: { c: 0xfff1d6, emit: 1.6 }, window: { c: 0xdfeaff, emit: 1.4 }, sign: { c: 0x2f9a52 },
-  target: { c: 0xf2b705, emit: 1.2, transparent: .85 }, ghost: { c: 0xf2b705, emit: 1, transparent: .4 }, shadow: { c: 0x000000, transparent: .25 },
+  redBtn: { c: 0xd2261c, e: 0x200000 }, lamp: { c: 0xfff1d6, emit: 1 }, window: { c: 0xdfeaff, emit: 1 }, sign: { c: 0x2f9a52 },
+  molten: { c: 0xff7d1a, emit: 1 }, moltenCore: { c: 0xffd45a, emit: 1 },
+  target: { c: 0xf2b705, emit: 1, transparent: .85 }, ghost: { c: 0xf2b705, emit: 1, transparent: .4 }, shadow: { c: 0x000000, transparent: .25 },
 };
 
 export class Materials {
@@ -30,8 +31,8 @@ export class Materials {
 
   constructor(low: boolean) {
     this.tex = buildTextures(low);
-    const g = new Uint8Array([60, 60, 60, 255, 125, 125, 125, 255, 192, 192, 192, 255, 255, 255, 255, 255]);
-    this.grad = new THREE.DataTexture(g, 4, 1, THREE.RGBAFormat); this.grad.minFilter = this.grad.magFilter = THREE.NearestFilter; this.grad.needsUpdate = true;
+    const g = new Uint8Array([88, 88, 88, 255, 178, 178, 178, 255, 255, 255, 255, 255]);
+    this.grad = new THREE.DataTexture(g, 3, 1, THREE.RGBAFormat); this.grad.minFilter = this.grad.magFilter = THREE.NearestFilter; this.grad.needsUpdate = true;
   }
 
   get(key: string): THREE.Material {
@@ -41,11 +42,12 @@ export class Materials {
       m = new THREE.MeshBasicMaterial({ color: new THREE.Color(d.c).multiplyScalar(d.emit), transparent: d.transparent !== undefined, opacity: d.transparent ?? 1, depthWrite: d.transparent === undefined });
       m.userData.outlineParameters = { visible: false };
     } else {
-      const o: THREE.MeshStandardMaterialParameters = { color: new THREE.Color(d.c).offsetHSL(0, .1, .02), roughness: d.r ?? .86, metalness: d.m ?? 0 };
-      if (d.t) { o.map = this.tex[d.t]; o.color = new THREE.Color(d.tint ?? 0xffffff).offsetHSL(0, .08, .02); }
+      // rysunkowe cieniowanie w kilku tonach (światło „maluje” plamami), kontur dorysowuje OutlineEffect
+      const o: THREE.MeshToonMaterialParameters = { color: new THREE.Color(d.c).offsetHSL(0, .14, .03), gradientMap: this.grad };
+      if (d.t) { o.map = this.tex[d.t]; o.color = new THREE.Color(d.tint ?? 0xffffff).offsetHSL(0, .1, .02); }
       if (d.e) o.emissive = new THREE.Color(d.e);
       if (d.transparent !== undefined) { o.transparent = true; o.opacity = d.transparent; o.depthWrite = false; }
-      m = new THREE.MeshStandardMaterial(o);
+      m = new THREE.MeshToonMaterial(o);
       if (d.transparent !== undefined) m.userData.outlineParameters = { visible: false };
     }
     this.cache.set(key, m); return m;
@@ -54,7 +56,7 @@ export class Materials {
   /** Materiał w dowolnym kolorze (np. skóra, włosy postaci). */
   color(hex: string, key = 'c:' + hex): THREE.Material {
     const hit = this.cache.get(key); if (hit) return hit;
-    const m = new THREE.MeshStandardMaterial({ color: new THREE.Color(hex), roughness: .8, metalness: 0 });
+    const m = new THREE.MeshToonMaterial({ color: new THREE.Color(hex), gradientMap: this.grad });
     this.cache.set(key, m); return m;
   }
 
