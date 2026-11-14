@@ -64,6 +64,17 @@ export const MODELS: ModelSpawn[] = [
 ];
 
 export const COLUMNS: [number, number][] = [6, 12, 18, 24, 30].flatMap(x => [[x, .45], [x, 21.55]] as [number, number][]);
-export const PALLETS: [number, number][] = [[3, 19], [4.6, 19], [24, 15.5], [33.5, 12], [33.5, 13.6], [15, 19.5]];
+/** Palety na hali (stosy). Przy każdym stanowisku leży tylko jedna paleta na formę – resztę trzeba znaleźć i przynieść. */
+export const PALLET_STACKS: { x: number; z: number; count: number }[] = [
+  ...STATIONS.map(st => ({ x: st.x + FORM_PALLETS_OFF[0].x, z: FORM_PALLETS_OFF[0].z, count: 1 })),
+  { x: 3, z: 19, count: 4 }, { x: 4.8, z: 19, count: 1 }, { x: 24, z: 15.5, count: 2 }, { x: 33.5, z: 12, count: 1 }, { x: 33.5, z: 13.6, count: 1 }, { x: 15, z: 19.5, count: 3 },
+];
+/** Paleciaki na hali: ręczne i elektryczne (różnią się prędkością). */
+export interface JackSpawn { id: string; kind: 'manual' | 'electric'; x: number; z: number; heading: number }
+export const JACKS: JackSpawn[] = [
+  { id: 'pr1', kind: 'manual', x: 2.2, z: 16.4, heading: 0 },
+  { id: 'pr2', kind: 'manual', x: 21.6, z: 13.4, heading: Math.PI / 2 },
+  { id: 'pe1', kind: 'electric', x: 27.5, z: 20.3, heading: -Math.PI / 2 },
+];
 export const SPAWN = { x: -6, z: 21.5 };
 export const CRANE_START_Z = 10;

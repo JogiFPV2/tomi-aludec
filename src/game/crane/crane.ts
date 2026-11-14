@@ -145,8 +145,8 @@ export class Crane {
       this.bus.emit('toast', { text: 'Forma wróciła do modelu' }); return;
     }
     l.parent = undefined;
-    const ground = this.support(l.x, l.z);
-    if (Math.abs(ground - .14) < .02 && Math.abs(l.y - .14) < .03) {
+    const pt = this.yard.palletTopAt(l.x, l.z);
+    if (pt !== null && Math.abs(l.y - pt) < .03) {
       if (!l.onPallet) { l.onPallet = true; this.bus.emit('score:add', { delta: this.bal.lift.palletPoints, reason: `Forma ${l.def.number} na palecie` }); }
       this.bus.emit('toast', { text: `Forma ${l.def.number} odłożona na paletę`, kind: 'ok' });
     } else if (l.y < .03) {

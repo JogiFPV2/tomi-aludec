@@ -22,6 +22,8 @@ export interface GameEvents {
   'remote:changed': { stationId: string; color: string; name: string } | null;
   'points:changed': { points: number; delta: number; reason?: string };
   'game:pause': { paused: boolean };
+  /** co gracz trzyma: paleciak albo palety w rękach */
+  'transport:changed': { holding: 'jack' | 'hand'; label: string } | null;
 }
 export type CraneGear = 1 | 2;
 

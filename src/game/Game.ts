@@ -4,6 +4,7 @@ import { Builder, V } from './render/build';
 import { World } from './world/world';
 import { Crane } from './crane/crane';
 import { Yard } from './crane/yard';
+import { Transport } from './transport/transport';
 import { buildAvatar, type Avatar } from './character/avatar';
 import { Input } from './input/input';
 import type { EventBus } from '../core/events';
@@ -13,6 +14,9 @@ import { ROOMS, SPAWN, MODELS, STATIONS, SLOT_X } from '../data/layout';
 
 export interface GameOptions { container: HTMLElement; backend: Backend; character: Character; balance: Balance; bus: EventBus; lowQuality: boolean }
 interface Interactable { id: string; label: string; pos: () => THREE.Vector3; radius: number; use: () => void }
+interface Nearby { id: string; label: string; use: () => void }
+/** Pochylenie kamery od pionu (widok z góry, lekko „od przodu”). */
+const CAM_TILT_DEG = 10, CAM_H = 34;
 
 /** Główny moduł gry: spina świat, postać, suwnicę, kamerę i pętlę. */
 export class Game {
@@ -23,6 +27,8 @@ export class Game {
   readonly world: World;
   readonly cranes: Crane[] = [];
   readonly yard: Yard;
+  readonly transport: Transport;
+  private hadJack = false;
   /** suwnica, której pilota trzyma gracz */
   remote: Crane | null = null;
   private remoteInHand: THREE.Group | null = null;
@@ -36,7 +42,7 @@ export class Game {
   zoom = 12; // widoczna wysokość sceny w metrach
   private camTarget = V(); private camPos = V();
   private interactables: Interactable[] = [];
-  nearby: Interactable | null = null;
+  nearby: Nearby | null = null;
   private raf = 0; private last = performance.now(); private saveT = 0; private running = true; private paused = false; private offBus: () => void; private offPour: () => void;
   room = '';
 
@@ -62,7 +68,9 @@ export class Game {
     this.world = new World(b); this.scene.add(this.world.group);
     this.yard = new Yard(b); this.scene.add(this.yard.group);
     for (const m of MODELS) this.yard.addModel(m);
-    for (const st of STATIONS) { const c = new Crane(b, o.bus, this.yard, (x, z) => this.world.supportAt(x, z), st, o.balance); this.cranes.push(c); this.scene.add(c.group); }
+    this.transport = new Transport(b, this.yard, this.world.col, o.balance.transport, o.bus); this.scene.add(this.transport.group);
+    this.yard.palletTopAt = (x, z) => this.transport.palletTopAt(x, z);
+    for (const st of STATIONS) { const c = new Crane(b, o.bus, this.yard, (x, z) => Math.max(this.world.supportAt(x, z), this.transport.supportAt(x, z)), st, o.balance); this.cranes.push(c); this.scene.add(c.group); }
     this.offPour = o.bus.on('pour:finished', r => { const l = this.yard.loads.find(x => x.id === r.loadId); if (l) this.yard.fillModel(l, { hooks: r.hooks, seed: Math.floor(Math.random() * 1e9), points: r.points }); });
     this.avatar = buildAvatar(b, o.character.appearance, o.lowQuality); this.avatar.setHelmet(true); this.scene.add(this.avatar.group);
 
@@ -137,6 +145,7 @@ export class Game {
   private onAction(a: string) {
     if (!this.running || this.paused) return;
     if (a === 'control') { this.toggleControl(); return; }
+    if (a === 'drop') { if (this.mode === 'walk') { this.transport.release(this.player); this.hadJack = !!this.transport.holding; } return; }
     if (this.mode === 'crane' && this.remote) {
       const c = this.remote;
       if (a.startsWith('sel')) { const i = +a.slice(3) - 1; if (c.pending) c.pick(i); else c.selectChain(i); return; }
@@ -160,21 +169,31 @@ export class Game {
   private update(dt: number) {
     const mv = this.input.move();
     if (this.mode === 'walk') {
-      const speed = (this.input.running() ? this.o.balance.player.runSpeed : this.o.balance.player.walkSpeed) * Math.min(1, Math.hypot(mv.x, mv.z));
-      const p = this.world.col.move(this.player.x, this.player.z, .3, mv.x * speed * dt, mv.z * speed * dt);
-      const moved = Math.hypot(p.x - this.player.x, p.z - this.player.z) / Math.max(dt, 1e-3);
-      this.player.x = p.x; this.player.z = p.z; this.player.speed = moved;
+      const bp = this.o.balance.player;
+      const speed = this.transport.speed(bp.walkSpeed, bp.runSpeed, this.input.running()) * Math.min(1, Math.hypot(mv.x, mv.z));
+      const ox = this.player.x, oz = this.player.z;
+      let p = this.world.col.move(ox, oz, .3, mv.x * speed * dt, mv.z * speed * dt);
       if (Math.hypot(mv.x, mv.z) > .1) this.player.heading = Math.atan2(mv.x, mv.z);
+      // paleciak / palety: widły nie wjeżdżają w ściany, ładunek jedzie z paletą
+      const q = this.transport.update(dt, { x: p.x, z: p.z, heading: this.player.heading });
+      if (q.x !== p.x || q.z !== p.z) p = this.world.col.resolve(q.x, q.z, .3);
+      this.player.speed = Math.hypot(p.x - ox, p.z - oz) / Math.max(dt, 1e-3);
+      this.player.x = p.x; this.player.z = p.z;
       for (const c of this.cranes) c.update(dt, null);
       // najbliższy obiekt do użycia
-      let best: Interactable | null = null, bd = 1e9;
-      for (const it of this.interactables) { const q = it.pos(); const d = Math.hypot(q.x - this.player.x, q.z - this.player.z); if (d < it.radius && d < bd) { bd = d; best = it; } }
-      if (best !== this.nearby) { this.nearby = best; this.o.bus.emit('interact:available', best ? { id: best.id, label: best.label } : null); }
+      let best: Nearby | null = null, bd = 1e9;
+      const busy = !!this.transport.holding || this.transport.hand > 0;
+      if (!busy) for (const it of this.interactables) { const q = it.pos(); const d = Math.hypot(q.x - this.player.x, q.z - this.player.z); if (d < it.radius && d < bd) { bd = d; best = { id: it.id, label: it.label, use: it.use }; } }
+      const ta = this.transport.action(this.player);
+      if (ta && ta.dist < bd) best = { id: ta.id, label: ta.label, use: () => { ta.run(); this.afterTransport(); } };
+      if (best?.id !== this.nearby?.id || best?.label !== this.nearby?.label) this.o.bus.emit('interact:available', best ? { id: best.id, label: best.label } : null);
+      this.nearby = best;
     } else {
       const rc = this.remote!;
       for (const c of this.cranes) c.update(dt, c === rc ? { mx: mv.x, mz: mv.z, hoist: this.input.hoist(), chain: this.input.chain() } : null);
       // operator stoi i patrzy na hak
-      const hw = rc.hookWorld(); this.player.heading = Math.atan2(hw.x - this.player.x, hw.z - this.player.z); this.player.speed = 0;
+      const hw = rc.hookWorld(); if (!this.transport.holding) this.player.heading = Math.atan2(hw.x - this.player.x, hw.z - this.player.z); this.player.speed = 0;
+      this.transport.update(dt, this.player);
       if (this.nearby) { this.nearby = null; this.o.bus.emit('interact:available', null); }
     }
     // postać
@@ -191,9 +210,16 @@ export class Game {
     const focus = this.mode === 'crane' && this.remote ? (() => { const h = this.remote.hookWorld(); return V(h.x, 0, h.z); })() : V(this.player.x, 0, this.player.z);
     this.camTarget.lerp(focus, snap ? 1 : 1 - Math.exp(-dt * 5));
     // widok z góry, lekko pochylony (kamera nad i trochę „za” – od strony +z)
-    this.camPos.set(this.camTarget.x, 34, this.camTarget.z + 21);
+    this.camPos.set(this.camTarget.x, CAM_H, this.camTarget.z + CAM_H * Math.tan(CAM_TILT_DEG * Math.PI / 180));
     this.camera.position.copy(this.camPos); this.camera.lookAt(this.camTarget);
     this.sun.position.set(this.camTarget.x - 12, 22, this.camTarget.z - 6); this.sun.target.position.copy(this.camTarget);
+  }
+
+  /** Po wzięciu paleciaka gracz staje za dyszlem. */
+  private afterTransport() {
+    const has = !!this.transport.holding;
+    if (has && !this.hadJack) { const g = this.transport.gripPose()!; const p = this.world.col.resolve(g.x, g.z, .3); this.player.x = p.x; this.player.z = p.z; this.player.heading = g.heading; }
+    this.hadJack = has;
   }
 
   private onResize = () => {

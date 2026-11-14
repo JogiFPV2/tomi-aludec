@@ -17,6 +17,7 @@ export interface Balance {
   instructions: { freeViewsPerModel: number; penaltyPerExtraView: number };
   pour: import('../game/pour/pourSim').PourBalance;
   lift: import('../game/crane/formLift').LiftBalance;
+  transport: import('../game/transport/stacking').TransportBalance;
   /** wersja testowa: odblokuj wszystkie uprawnienia (np. suwnicę) */
   devUnlockAll: boolean;
 }
@@ -27,6 +28,7 @@ export const DEFAULT_BALANCE: Balance = {
   instructions: { freeViewsPerModel: 20, penaltyPerExtraView: 5 },
   pour: { startDelaySec: 2, maxPauseSec: 15, unloadSec: 3, flowRate: .022, armSpeed: .7, tapPenalty: [30, 70, 100], missingHookPenalty: 100, spillPenaltyPerKg: .5, weakPenalty: 80, basePoints: 300, targetTimeSec: 75, timeBonusMax: 100 },
   lift: { warnDeg: 3, crackDeg: 9, penaltyPerDegSec: 6, crackPenalty: 120, driftDegPerM: 14, baseImbalance: .45, swingCoupling: .5, chainRate: .035, extractPoints: 60, palletPoints: 20, floorPenalty: 30 },
+  transport: { maxStack: 6, handMax: 2, handSpeed: [.75, .55], jackManualSpeed: 1.7, jackElectricSpeed: 3.2, jackLift: .08, jackTurn: 3.2 },
   devUnlockAll: true,
 };
 

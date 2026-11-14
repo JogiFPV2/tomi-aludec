@@ -38,6 +38,8 @@ export class Yard {
   group = new THREE.Group();
   private hookGeo: THREE.TubeGeometry;
   private n = 0;
+  /** wysokość wierzchu palety w punkcie (ustawia moduł transportu) – suwnica sprawdza, czy forma stoi na palecie */
+  palletTopAt: (x: number, z: number) => number | null = () => null;
 
   constructor(private b: Builder) {
     const c = new THREE.CatmullRomCurve3([V(-.04, 0, 0), V(-.04, .2, 0), V(-.065, .26, 0), V(-.045, .31, 0), V(0, .33, 0), V(.045, .31, 0), V(.065, .26, 0), V(.04, .2, 0), V(.04, 0, 0)]);

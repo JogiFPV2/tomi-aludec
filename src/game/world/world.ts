@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Builder, V } from '../render/build';
 import { CollisionWorld } from './collision';
-import { ROOMS, WALLS, STATIONS, COLUMNS, PALLETS, DOORS, SLOT_X, MIXER_OFF, FORM_PALLETS_OFF, MODELS } from '../../data/layout';
+import { ROOMS, WALLS, STATIONS, COLUMNS, DOORS, SLOT_X, MIXER_OFF, FORM_PALLETS_OFF } from '../../data/layout';
 
 /** Buduje świat z danych układu: podłogi, ściany, stanowiska, wyposażenie, kolizje i podłoża. */
 export interface Support { x0: number; z0: number; x1: number; z1: number; h: number }
@@ -71,7 +71,8 @@ export class World {
         tg.add(b.box(.16, .01, .16 * (i + 1), 'target', [0, 0, .5]));
       });
       // palety na gotowe formy
-      for (const fp of FORM_PALLETS_OFF) this.pallet(st.x + fp.x, fp.z);
+      // miejsca na palety (same palety są ruchome – moduł transportu)
+      for (const fp of FORM_PALLETS_OFF) for (const [w, d, x, z] of [[1.7, .05, 0, .7], [1.7, .05, 0, -.7], [.05, 1.4, .85, 0], [.05, 1.4, -.85, 0]]) g.add(b.box(w, .006, d, 'core', [st.x + fp.x + x, .004, fp.z + z]));
       this.labels.push({ text: 'Palety na formy', pos: V(st.x + 1.3, 1, FORM_PALLETS_OFF[0].z) });
       // mieszarka
       const mx = MIXER_OFF.x, mz = MIXER_OFF.z;
@@ -93,11 +94,8 @@ export class World {
       for (const y of [.26, 1.36]) for (const dx of [-.9, .9]) { const h = .3 + ((x * 7 + y * 3 + dx) % 1) * .5; r.add(b.box(1, h, .85, (x + dx) % 2 ? 'green' : 'red', [dx, y + .06 + h / 2, 0])); }
       this.col.addRect({ x0: x - 1.8, z0: .8, x1: x + 1.8, z1: 2 });
     }
-    // palety (część pusta – do szukania), gotowe formy
-    for (const [x, z] of PALLETS) this.pallet(x, z);
+    // gotowe formy na paletach (stałe)
     for (let i = 0; i < 4; i++) { const x = 21 + i * 1.8, z = 18.8; this.pallet(x, z); g.add(b.box(1.44, .5, 1.04, 'sand', [x, .39, z])); }
-    // palety z modelami do przeniesienia
-    for (const m of MODELS) this.pallet(m.x, m.z);
     // pojemnik na metale
     g.add(b.box(1.6, .7, 1.1, 'steel', [14.5, .35, 14]));
     for (let i = 0; i < 8; i++) g.add(b.box(.13, .1, .08, 'chill', [14.0 + (i % 4) * .3, .74, 13.8 + Math.floor(i / 4) * .35]));
