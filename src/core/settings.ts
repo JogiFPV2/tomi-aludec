@@ -3,7 +3,7 @@
  * Moduły czytają `settings.v` i mogą nasłuchiwać zmian.
  */
 export interface Settings {
-  camTilt: number;      // pochylenie kamery od pionu, 12–20°
+  camTilt: number;      // pochylenie kamery od pionu, 12–60°
   moveSens: number;     // czułość gałki chodzenia, 0,5–1,5
   armSens: number;      // czułość ramienia mieszarki, 0,4–1,4
   uiScale: number;      // wielkość przycisków i napisów, 0,85–1,3
@@ -12,7 +12,7 @@ export interface Settings {
   labels: boolean;      // napisy nad miejscami na hali
 }
 export const DEFAULTS: Settings = { camTilt: 16, moveSens: .8, armSens: .7, uiScale: 1, leftHanded: false, grain: true, labels: true };
-export const LIMITS = { camTilt: [12, 20], moveSens: [.5, 1.5], armSens: [.4, 1.4], uiScale: [.85, 1.3] } as const;
+export const LIMITS = { camTilt: [12, 60], moveSens: [.5, 1.5], armSens: [.4, 1.4], uiScale: [.85, 1.3] } as const;
 const KEY = 'tomi.ustawienia';
 
 /** Wczytane wartości przycina do dozwolonych zakresów (stare lub zepsute zapisy nie psują gry). */

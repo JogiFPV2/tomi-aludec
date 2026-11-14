@@ -21,7 +21,7 @@ export function buildMenu(o: { onClose: () => void; onLogout: () => void; onFull
     h('header', { class: 'menu-h' }, h('div', { class: 'title', text: 'Menu' }), h('button', { class: 'btn pri', type: 'button', text: 'Wróć do gry', onclick: o.onClose })),
     h('div', { class: 'menu-body' },
       h('h3', { text: 'Kamera' }),
-      slider('camTilt', 'Kąt kamery', '12° – prawie z góry, 20° – bardziej ukośnie.', v => v.toFixed(0) + '°', 1),
+      slider('camTilt', 'Kąt kamery', '12° – prawie z góry, 60° – mocno ukośnie, widać twarze i boki maszyn.', v => v.toFixed(0) + '°', 1),
       h('h3', { text: 'Sterowanie' }),
       slider('moveSens', 'Czułość chodzenia', 'Mniej = spokojniejsza gałka: pełna prędkość dopiero przy krawędzi.', pct, .05),
       slider('armSens', 'Czułość ramienia mieszarki', 'Jak szybko ramię jedzie przy sypaniu.', pct, .05),

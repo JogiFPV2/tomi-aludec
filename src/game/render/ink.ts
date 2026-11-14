@@ -26,9 +26,13 @@ export class InkPass {
           vec2 uv = vUv + (vec2(noise(px * .045), noise(px * .045 + 31.7)) - .5) * texel * 2.6;
           vec2 o = texel * width * (.65 + noise(px * .02 + 9.) * .9);
           float d = D(uv);
-          float l = abs(D(uv + vec2(o.x, 0.)) + D(uv - vec2(o.x, 0.)) - 2. * d) + abs(D(uv + vec2(0., o.y)) + D(uv - vec2(0., o.y)) - 2. * d);
+          float r = D(uv + vec2(o.x, 0.)), lf = D(uv - vec2(o.x, 0.)), u = D(uv + vec2(0., o.y)), dn = D(uv - vec2(0., o.y));
+          float l = abs(r + lf - 2. * d) + abs(u + dn - 2. * d);
           l = max(l, abs(D(uv + o) + D(uv - o) - 2. * d) + abs(D(uv + vec2(o.x, -o.y)) + D(uv - vec2(o.x, -o.y)) - 2. * d));
-          float e = smoothstep(.03, .075, l);
+          // próg rośnie z nachyleniem powierzchni (mocno pochylona kamera, duże oddalenie) – posadzka zostaje czysta
+          float slope = min(abs(r - d), abs(d - lf)) + min(abs(u - d), abs(d - dn));
+          float t = .03 + slope * 1.1;
+          float e = smoothstep(t, t * 2.5, l);
           vec3 c = texture2D(tColor, vUv).rgb;
           gl_FragColor = vec4(mix(c, ink, e * .94), 1.);
           #include <tonemapping_fragment>

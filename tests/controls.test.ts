@@ -24,8 +24,8 @@ describe('gałka', () => {
 });
 describe('ustawienia', () => {
   it('przycina do zakresów i ignoruje śmieci', () => {
-    const s = sanitize({ camTilt: 45, moveSens: -3, uiScale: 'x', leftHanded: true, grain: 'tak' });
-    expect(s.camTilt).toBe(20); expect(s.moveSens).toBe(.5); expect(s.uiScale).toBe(DEFAULTS.uiScale); expect(s.leftHanded).toBe(true); expect(s.grain).toBe(DEFAULTS.grain);
+    const s = sanitize({ camTilt: 95, moveSens: -3, uiScale: 'x', leftHanded: true, grain: 'tak' });
+    expect(s.camTilt).toBe(60); expect(s.moveSens).toBe(.5); expect(s.uiScale).toBe(DEFAULTS.uiScale); expect(s.leftHanded).toBe(true); expect(s.grain).toBe(DEFAULTS.grain);
     expect(sanitize(null)).toEqual(DEFAULTS);
   });
 });
