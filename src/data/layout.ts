@@ -76,6 +76,11 @@ export const JACKS: JackSpawn[] = [
   { id: 'pr2', kind: 'manual', x: 21.6, z: 13.4, heading: Math.PI / 2 },
   { id: 'pe1', kind: 'electric', x: 27.5, z: 20.3, heading: -Math.PI / 2 },
 ];
+/** Skrzynie z metalami – każda do jednego modelu. */
+export const METAL_BOXES: { id: string; modelId: string; x: number; z: number }[] = [
+  { id: 'box-kp180', modelId: 'kp180', x: 14.5, z: 14 },
+  { id: 'box-ob220', modelId: 'ob220', x: 16.9, z: 14 },
+];
 /** Kadź z ciekłym aluminium (źródło żaru i iskier). */
 export const LADLE = { x: 34.4, z: 9.4 };
 export const SPAWN = { x: -6, z: 21.5 };

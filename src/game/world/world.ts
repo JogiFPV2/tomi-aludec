@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Builder, V } from '../render/build';
 import { CollisionWorld } from './collision';
-import { ROOMS, WALLS, STATIONS, COLUMNS, DOORS, SLOT_X, MIXER_OFF, FORM_PALLETS_OFF } from '../../data/layout';
+import { ROOMS, WALLS, STATIONS, COLUMNS, METAL_BOXES, DOORS, SLOT_X, MIXER_OFF, FORM_PALLETS_OFF } from '../../data/layout';
 
 /** Buduje świat z danych układu: podłogi, ściany, stanowiska, wyposażenie, kolizje i podłoża. */
 export interface Support { x0: number; z0: number; x1: number; z1: number; h: number }
@@ -10,7 +10,7 @@ export class World {
   group = new THREE.Group();
   col = new CollisionWorld();
   supports: Support[] = [];
-  labels: { text: string; pos: THREE.Vector3 }[] = [];
+  labels: { text: string; pos: THREE.Vector3; kind?: 'box' }[] = [];
   mixers: { arm: THREE.Object3D; x: number; z: number; stationId: string }[] = [];
 
   constructor(private b: Builder) {
@@ -97,10 +97,11 @@ export class World {
     // gotowe formy na paletach (stałe)
     for (let i = 0; i < 4; i++) { const x = 21 + i * 1.8, z = 18.8; this.pallet(x, z); g.add(b.box(1.44, .5, 1.04, 'sand', [x, .39, z])); }
     // pojemnik na metale
-    g.add(b.box(1.6, .7, 1.1, 'steel', [14.5, .35, 14]));
-    for (let i = 0; i < 8; i++) g.add(b.box(.13, .1, .08, 'chill', [14.0 + (i % 4) * .3, .74, 13.8 + Math.floor(i / 4) * .35]));
-    this.col.addRect({ x0: 13.7, z0: 13.45, x1: 15.3, z1: 14.55 });
-    this.labels.push({ text: 'Pojemnik z metalami', pos: V(14.5, 1.4, 14) });
+    for (const bx of METAL_BOXES) {
+      g.add(b.box(1.6, .7, 1.1, 'steel', [bx.x, .35, bx.z]), b.box(1.44, .04, .94, 'dark', [bx.x, .69, bx.z]));
+      for (let i = 0; i < 10; i++) g.add(b.box(.13, .1, .08, 'chill', [bx.x - .56 + (i % 5) * .28, .74, bx.z - .2 + Math.floor(i / 5) * .38]));
+      this.col.addRect({ x0: bx.x - .8, z0: bx.z - .55, x1: bx.x + .8, z1: bx.z + .55 });
+    }
     // wózek widłowy (stoi)
     const fk = new THREE.Group(); fk.position.set(31, 0, 17); fk.rotation.y = -Math.PI / 2; g.add(fk);
     fk.add(b.box(1.2, .7, 2, 'orange', [0, .6, 0]), b.box(1.1, .06, 1.5, 'dark', [0, 2.25, .1]));

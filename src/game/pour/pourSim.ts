@@ -15,11 +15,13 @@ export interface PourBalance {
   startDelaySec: number; maxPauseSec: number; unloadSec: number; flowRate: number; armSpeed: number;
   tapPenalty: number[]; missingHookPenalty: number; spillPenaltyPerKg: number; weakPenalty: number;
   basePoints: number; targetTimeSec: number; timeBonusMax: number;
+  wrongMetalPenalty: number; missingMetalPenalty: number;
 }
 
 export type MachineState = 'stoi' | 'start' | 'sypie' | 'pauza' | 'wyladunek';
 
-export interface MetalState { slot: string; metalId: string; x: number; z: number; top: number; need: number; taps: number; buried: boolean }
+/** metalId – jaki metal powinien tu leżeć; placed – jaki faktycznie leży (null = puste miejsce) */
+export interface MetalState { slot: string; metalId: string; placed: string | null; x: number; z: number; top: number; need: number; taps: number; buried: boolean }
 export interface HookState { x: number; z: number; placed: boolean; depthOk?: boolean }
 
 export interface PourResult {
@@ -48,17 +50,28 @@ export class PourSim {
   metals: MetalState[]; hooks: HookState[];
   finished = false;
 
-  constructor(def: ModelDef, public bal: PourBalance) {
+  /** `metals`: 'all' – metale już leżą w modelu (testy), 'none' – gracz układa je sam z palety */
+  constructor(def: ModelDef, public bal: PourBalance, metals: 'all' | 'none' = 'all') {
     this.def = def;
     this.dx = def.inner.l / (NX - 1); this.dz = def.inner.w / (NZ - 1);
-    this.metals = def.metals.map(m => { const md = metalById(m.metalId); return { slot: m.slot, metalId: m.metalId, x: m.x, z: m.z, top: md ? md.size[2] : .1, need: m.taps, taps: 0, buried: false }; });
+    this.metals = def.metals.map(m => { const md = metalById(m.metalId); return { slot: m.slot, metalId: m.metalId, placed: metals === 'all' ? m.metalId : null, x: m.x, z: m.z, top: md ? md.size[2] : .1, need: m.taps, taps: 0, buried: false }; });
     this.hooks = def.hooks.map(h => ({ x: h.x, z: h.z, placed: false }));
+    this.rebuildBase();
+    this.arm.x = this.arm.tx = -def.inner.l / 2 - .3; this.arm.z = this.arm.tz = -def.inner.w / 2 - .2; // ramię zaparkowane obok
+  }
+
+  /** Wysokość wzoru i ułożonych metali (podłoże pod masę). */
+  private rebuildBase() {
     for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) {
-      const x = this.cx(i), z = this.cz(j); let b = patternTop(def, x, z);
-      for (const m of this.metals) { const md = metalById(m.metalId); const s = md?.size ?? [.12, .08, .1]; if (Math.abs(x - m.x) < s[0] / 2 + .01 && Math.abs(z - m.z) < s[1] / 2 + .01) b = Math.max(b, m.top); }
+      const x = this.cx(i), z = this.cz(j); let b = patternTop(this.def, x, z);
+      for (const m of this.metals) { if (!m.placed) continue; const s = metalById(m.placed)?.size ?? [.12, .08, .1]; if (Math.abs(x - m.x) < s[0] / 2 + .01 && Math.abs(z - m.z) < s[1] / 2 + .01) b = Math.max(b, m.top); }
       this.base[j * NX + i] = b;
     }
-    this.arm.x = this.arm.tx = -def.inner.l / 2 - .3; this.arm.z = this.arm.tz = -def.inner.w / 2 - .2; // ramię zaparkowane obok
+  }
+  /** Kładzie metal w miejscu `k` (null = zdejmuje). Tylko przed pierwszym Startem. */
+  placeMetal(k: number, metalId: string | null): boolean {
+    const m = this.metals[k]; if (!m || this.started) return false;
+    m.placed = metalId; m.top = metalId ? (metalById(metalId)?.size[2] ?? .1) : 0; this.rebuildBase(); return true;
   }
 
   cx(i: number) { return -this.def.inner.l / 2 + i * this.dx; }
@@ -98,6 +111,7 @@ export class PourSim {
   /** Podbicie metalu – zwraca komunikat dla gracza. */
   tapMetal(k: number): { ok: boolean; msg: string } {
     const m = this.metals[k]; if (!m) return { ok: false, msg: '' };
+    if (!m.placed) return { ok: false, msg: `W miejscu „${m.slot}” nie ma metalu` };
     if (m.taps >= m.need) return { ok: false, msg: `${m.metalId}: już podbity` };
     const lvl = this.sandLevelNear(m.x, m.z);
     if (lvl < m.top * .6) return { ok: false, msg: `Za wcześnie – masa jeszcze nie doszła do metalu ${m.metalId}` };
@@ -130,7 +144,7 @@ export class PourSim {
     if (this.machine === 'sypie') this.pourAt(this.arm.x, this.arm.z, dt);
     this.relax();
     // metale zasypane
-    for (const m of this.metals) if (!m.buried && this.sandLevelNear(m.x, m.z) > m.top + .12) m.buried = true;
+    for (const m of this.metals) if (m.placed && !m.buried && this.sandLevelNear(m.x, m.z) > m.top + .12) m.buried = true;
   }
 
   private pourAt(x: number, z: number, dt: number) {
@@ -175,7 +189,11 @@ export class PourSim {
     this.finished = true; this.machine = 'stoi';
     const b = this.bal; const breakdown: { label: string; pts: number }[] = [];
     breakdown.push({ label: 'Forma zasypana', pts: b.basePoints });
-    const tapMissing = this.metals.filter(m => m.taps < m.need).map(m => {
+    for (const m of this.metals) {
+      if (!m.placed) breakdown.push({ label: `Brak metalu ${m.metalId} (${m.slot})`, pts: -b.missingMetalPenalty });
+      else if (m.placed !== m.metalId) breakdown.push({ label: `Zły metal ${m.placed} zamiast ${m.metalId} (${m.slot})`, pts: -b.wrongMetalPenalty });
+    }
+    const tapMissing = this.metals.filter(m => m.placed && m.taps < m.need).map(m => {
       const missing = m.need - m.taps; const ratio = missing / m.need;
       // przykład z założeń dla metalu na 3 podbicia: brak 1 → −30, brak 2 → −70, brak 3 → −100
       const pen = ratio >= .99 ? b.tapPenalty[2] : ratio >= .5 ? b.tapPenalty[1] : b.tapPenalty[0];

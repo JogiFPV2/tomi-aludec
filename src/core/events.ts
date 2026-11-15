@@ -22,6 +22,9 @@ export interface GameEvents {
   'remote:changed': { stationId: string; color: string; name: string } | null;
   'points:changed': { points: number; delta: number; reason?: string };
   'game:pause': { paused: boolean };
+  /** gracz otworzył skrzynię z metalami (przekładanie na paletę) */
+  'metals:open': { boxId: string };
+  'metals:closed': { boxId: string };
   /** co gracz trzyma: paleciak albo palety w rękach */
   'transport:changed': { holding: 'jack' | 'hand'; label: string; what: string } | null;
 }

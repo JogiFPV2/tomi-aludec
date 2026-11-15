@@ -1,3 +1,4 @@
+import { MetalsController } from './ui/screens/metals';
 import './styles.css';
 import { EventBus } from './core/events';
 import { mergeBalance, DEFAULT_BALANCE, type Balance } from './core/balance';
@@ -58,10 +59,11 @@ async function enterGame(character: Character) {
     try { game = new Game({ container: wrap, backend, character, balance, bus, lowQuality: lowQ }); }
     catch (e) { console.error(e); wrap.append(h('p', { class: 'center-msg', text: 'Ta przeglądarka nie obsługuje grafiki 3D (WebGL). Spróbuj w Chrome, Safari albo Firefox.' })); return () => wrap.remove(); }
     const hud = new Hud(wrap, game, bus, character, { dev: balance.devUnlockAll, onLogout: async () => { game.savePosition(); await backend.signOut(); showAuth(); } });
-    const pour = new PourController(wrap, bus, balance, lowQ);
+    const pour = new PourController(wrap, bus, balance, lowQ, game);
+    const metals = new MetalsController(wrap, game, bus, balance);
     const scoring = new Scoring(bus, backend, character);
     (window as unknown as { __game: Game }).__game = game;
-    return () => { pour.dispose(); scoring.dispose(); hud.dispose(); game.dispose(); bus.clear(); wrap.remove(); };
+    return () => { metals.dispose(); pour.dispose(); scoring.dispose(); hud.dispose(); game.dispose(); bus.clear(); wrap.remove(); };
   });
 }
 

@@ -18,6 +18,7 @@ export interface Balance {
   pour: import('../game/pour/pourSim').PourBalance;
   lift: import('../game/crane/formLift').LiftBalance;
   transport: import('../game/transport/stacking').TransportBalance;
+  metals: import('../game/metals/box').MetalsBalance;
   /** wersja testowa: odblokuj wszystkie uprawnienia (np. suwnicę) */
   devUnlockAll: boolean;
 }
@@ -26,7 +27,8 @@ export const DEFAULT_BALANCE: Balance = {
   crane: { slowSpeed: 0.35, fastSpeed: 1.1, hoistSlow: 0.12, hoistFast: 0.4, accel: 1.6, swingDamping: 0.06, unlockPoints: 500 },
   player: { walkSpeed: 2.2, runSpeed: 3.6 },
   instructions: { freeViewsPerModel: 20, penaltyPerExtraView: 5 },
-  pour: { startDelaySec: 2, maxPauseSec: 15, unloadSec: 3, flowRate: .022, armSpeed: .7, tapPenalty: [30, 70, 100], missingHookPenalty: 100, spillPenaltyPerKg: .5, weakPenalty: 80, basePoints: 300, targetTimeSec: 75, timeBonusMax: 100 },
+  pour: { startDelaySec: 2, maxPauseSec: 15, unloadSec: 3, flowRate: .022, armSpeed: .7, tapPenalty: [30, 70, 100], missingHookPenalty: 100, spillPenaltyPerKg: .5, weakPenalty: 80, basePoints: 300, targetTimeSec: 75, timeBonusMax: 100, wrongMetalPenalty: 60, missingMetalPenalty: 100 },
+  metals: { boxSize: 30, otherShare: .1, palletCap: 16, refillBelow: 8, reach: 2.8, stationReach: 5 },
   lift: { warnDeg: 3, crackDeg: 9, penaltyPerDegSec: 6, crackPenalty: 120, driftDegPerM: 14, baseImbalance: .45, swingCoupling: .5, chainRate: .035, extractPoints: 60, palletPoints: 20, floorPenalty: 30 },
   transport: { maxStack: 6, handMax: 2, handSpeed: [.75, .55], jackManualSpeed: 1.7, jackElectricSpeed: 3.2, jackLift: .08, jackTurn: 2.2 },
   devUnlockAll: true,

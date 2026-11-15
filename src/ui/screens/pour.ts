@@ -1,3 +1,6 @@
+import type { Game } from '../../game/Game';
+import { STATIONS } from '../../data/layout';
+import { countBy } from '../../game/metals/box';
 import { shapeStick } from '../../game/input/stick';
 import { settings } from '../../core/settings';
 import * as THREE from 'three';
@@ -16,13 +19,15 @@ import type { Balance } from '../../core/balance';
  * Stan sypania każdego stanowiska jest pamiętany – można odejść i wrócić.
  */
 interface Saved { sim: PourSim; closedAt: number }
+/** Metale na paletach stojących obok stanowiska – z nich gracz układa metale w modelu. */
+export interface MetalStock { counts(): Record<string, number>; take(id: string): boolean; put(id: string): void }
 
 export class PourController {
   private saved = new Map<string, Saved>();
   private screen: PourScreen | null = null;
   private off: (() => void)[] = [];
 
-  constructor(private wrap: HTMLElement, private bus: EventBus, private balance: Balance, private lowQ: boolean) {
+  constructor(private wrap: HTMLElement, private bus: EventBus, private balance: Balance, private lowQ: boolean, private game: Game) {
     this.off.push(bus.on('pour:open', ({ stationId, loadId, modelId }) => this.open(stationId, loadId, modelId)));
   }
 
@@ -31,12 +36,18 @@ export class PourController {
     const def = modelById(modelId); if (!def) { this.bus.emit('toast', { text: 'Nieznany model – brak danych w katalogu.', kind: 'bad' }); return; }
     // stan sypania pamiętany dla każdego modelu osobno (na rolotoku mogą stać 3)
     let s = this.saved.get(loadId);
-    if (!s) { s = { sim: new PourSim(def, this.balance.pour), closedAt: 0 }; this.saved.set(loadId, s); }
+    if (!s) { s = { sim: new PourSim(def, this.balance.pour, 'none'), closedAt: 0 }; this.saved.set(loadId, s); }
     else if (s.closedAt) { // czas, gdy gracza nie było przy maszynie (maszyna stała na pauzie)
       let away = (performance.now() - s.closedAt) / 1000; while (away > 0) { const d = Math.min(.25, away); s.sim.step(d); away -= d; }
     }
     this.bus.emit('game:pause', { paused: true });
-    this.screen = new PourScreen(this.wrap, s.sim, this.bus, this.lowQ, stationId, (result) => {
+    const st = STATIONS.find(x => x.id === stationId)!; const reach = this.balance.metals.stationReach; const tr = this.game.transport;
+    const stock: MetalStock = {
+      counts: () => countBy(tr.metalStacks(st.x, st.z, reach).flatMap(p => p.metals)),
+      take: id => tr.takeMetal(st.x, st.z, reach, id),
+      put: id => { if (!tr.putMetal(st.x, st.z, reach, id)) this.bus.emit('toast', { text: 'Nie ma obok palety, na którą można odłożyć metal – przepadł.', kind: 'bad' }); },
+    };
+    this.screen = new PourScreen(this.wrap, s.sim, this.bus, this.lowQ, stationId, stock, (result) => {
       if (result) {
         const hooks = s!.sim.hooks.filter(hk => hk.placed).map(hk => ({ x: hk.x, z: hk.z, ok: hk.depthOk }));
         this.saved.delete(loadId); this.bus.emit('pour:finished', { stationId, loadId, modelId, points: result.points, breakdown: result.breakdown, hooks });
@@ -59,13 +70,14 @@ class PourScreen {
   private hookMeshes: THREE.Object3D[] = [];
   private raf = 0; private last = performance.now();
   private ui: Record<string, HTMLElement> = {};
+  private metalMeshes: (THREE.Mesh | null)[] = []; private chooser!: HTMLElement; private autoBtn!: HTMLButtonElement;
   private tapEls: HTMLButtonElement[] = []; private hookEls: HTMLButtonElement[] = [];
   private xsec: HTMLCanvasElement;
   private keys = new Set<string>();
   private offKeys: () => void;
   private lastMsg = new Map<string, number>();
 
-  constructor(parent: HTMLElement, private sim: PourSim, private bus: EventBus, lowQ: boolean, stationId: string, private onClose: (r: PourResult | null) => void) {
+  constructor(parent: HTMLElement, private sim: PourSim, private bus: EventBus, lowQ: boolean, stationId: string, private stock: MetalStock, private onClose: (r: PourResult | null) => void) {
     const def = sim.def;
     this.mats = new Materials(lowQ); this.b = new Builder(this.mats);
     this.renderer = new THREE.WebGLRenderer({ antialias: !lowQ, preserveDrawingBuffer: new URLSearchParams(location.search).has('zrzut') });
@@ -102,7 +114,9 @@ class PourScreen {
     this.xsec = h('canvas', { class: 'xsec', width: 320, height: 170 });
     const tagLayer = h('div', { class: 'ptags' });
     const metalNames = def.metals.map(m => `${m.metalId}`);
-    sim.metals.forEach((m, k) => { const e = h('button', { class: 'tap', type: 'button', 'aria-label': `Podbij metal ${metalNames[k]} (${m.slot})`, onclick: (ev: Event) => { ev.stopPropagation(); this.tap(k); } }); tagLayer.append(e); this.tapEls.push(e); });
+    sim.metals.forEach((m, k) => { const e = h('button', { class: 'tap', type: 'button', 'aria-label': `Podbij metal ${metalNames[k]} (${m.slot})`, onclick: (ev: Event) => { ev.stopPropagation(); if (this.sim.started) this.tap(k); else this.openChooser(k); } }); tagLayer.append(e); this.tapEls.push(e); });
+    this.chooser = h('div', { class: 'panel pchooser', hidden: true });
+    this.autoBtn = h('button', { class: 'btn', type: 'button', text: 'Ułóż pasujące z palety', onclick: () => this.autoPlace() });
     sim.hooks.forEach((_, k) => { const e = h('button', { class: 'hookmk', type: 'button', 'aria-label': 'Wstaw hak', text: 'Ω', onclick: (ev: Event) => { ev.stopPropagation(); this.hook(k); } }); tagLayer.append(e); this.hookEls.push(e); });
 
     const canvasBox = h('div', { class: 'pcanvas' }, this.renderer.domElement, tagLayer);
@@ -118,14 +132,14 @@ class PourScreen {
       h('div', { class: 'dim small', text: `Brak podbić: ${sim.bal.tapPenalty.map(p => '−' + p).join(' / ')} pkt` }));
     const left = h('section', { class: 'panel ptop' },
       h('div', { class: 'row' }, h('span', { class: 'eyebrow', text: `${def.number} · ${stationId.replace('st', 'stanowisko ')}` }), this.ui.fill),
-      h('div', { class: 'row tline' }, this.ui.timer, this.ui.state), this.ui.hint,
+      h('div', { class: 'row tline' }, this.ui.timer, this.ui.state), this.ui.hint, this.autoBtn,
       h('div', { class: 'pxsec' }, this.xsec), metalsBox,
       h('div', { class: 'pacts' }, h('button', { class: 'btn', type: 'button', text: 'Wróć na halę', onclick: () => this.close(null) }), this.ui.finish));
     const right = h('section', { class: 'panel pmachine' },
       h('div', { class: 'mbtns' }, btn('start', 'Start', () => this.msg(sim.start())), btn('pause', 'Pauza', () => this.msg(sim.pause())), btn('unload', 'Wyładuj', () => this.msg(sim.unload()))),
       h('div', { class: 'row small' }, h('span', { class: 'dim', text: 'Pauza (maks.)' }), this.ui.pauseTxt), h('div', { class: 'bar' }, this.ui.pauseBar), this.ui.warn);
     this.panels = [left, right];
-    this.el = h('div', { class: 'screen pour' }, canvasBox, left, right, joy,
+    this.el = h('div', { class: 'screen pour' }, canvasBox, left, right, joy, this.chooser,
       !touch ? h('div', { class: 'pkeys dim small', text: 'W A S D / gałka: ramię · Spacja: Start/Pauza · Esc: wróć' }) : null);
     parent.append(this.el);
     const kd = (e: KeyboardEvent) => {
@@ -154,7 +168,39 @@ class PourScreen {
       else if (p.kind === 'cyl') g.add(b.cyl(p.r, p.r, p.h, p.color, [p.x, .06 + p.h / 2, p.z], undefined, 20));
       else g.add(b.box(p.w, p.h, p.d, p.color, [p.x, .06 + p.h / 2, p.z]));
     }
-    for (const m of def.metals) { const md = metalById(m.metalId); const s = md?.size ?? [.12, .08, .1]; g.add(b.box(s[0], s[2], s[1], 'chill', [m.x, .06 + s[2] / 2, m.z])); }
+    this.syncMetals();
+  }
+
+  /** Bryły metali w modelu – tylko tam, gdzie gracz coś położył. */
+  private syncMetals() {
+    this.sim.metals.forEach((m, k) => {
+      const old = this.metalMeshes[k]; if (old) { this.model.remove(old); old.geometry.dispose(); this.metalMeshes[k] = null; }
+      if (!m.placed) return;
+      const s = metalById(m.placed)?.size ?? [.12, .08, .1];
+      const mesh = this.b.box(s[0], s[2], s[1], m.placed.startsWith('U') ? 'steel' : 'chill', [m.x, .06 + s[2] / 2, m.z]); this.model.add(mesh); this.metalMeshes[k] = mesh;
+    });
+  }
+  /** Wybór metalu z palety do miejsca `k` (przed Startem). */
+  private openChooser(k: number) {
+    const m = this.sim.metals[k]; const c = this.stock.counts(); const ids = Object.keys(c).sort();
+    const pick = (id: string | null) => {
+      if (id && !this.stock.take(id)) { this.msg('Tego metalu nie ma już na palecie.', 'bad'); return; }
+      if (m.placed) this.stock.put(m.placed);
+      this.sim.placeMetal(k, id); this.syncMetals(); this.chooser.hidden = true;
+    };
+    this.chooser.replaceChildren(
+      h('div', { class: 'row' }, h('b', { text: `Miejsce: ${m.slot}` }), h('span', { class: 'dim', text: `wg instrukcji: ${m.metalId}` })),
+      ids.length ? h('div', { class: 'pch-list' }, ...ids.map(id => h('button', { class: 'btn', type: 'button', onclick: () => pick(id) }, h('b', { text: id }), h('span', { class: 'dim', text: ` × ${c[id]}` }))))
+        : h('p', { class: 'dim', text: 'Obok stanowiska nie ma palety z metalami. Przywieź metale ze skrzyni i odstaw paletę przy stanowisku.' }),
+      h('div', { class: 'pch-acts' }, m.placed ? h('button', { class: 'btn', type: 'button', text: `Zdejmij ${m.placed}`, onclick: () => pick(null) }) : null, h('button', { class: 'btn', type: 'button', text: 'Anuluj', onclick: () => { this.chooser.hidden = true; } })));
+    this.chooser.hidden = false;
+  }
+  /** Układa we wszystkich pustych miejscach właściwe metale, o ile są na palecie. */
+  private autoPlace() {
+    let n = 0, miss = 0;
+    this.sim.metals.forEach((m, k) => { if (m.placed) return; if (this.stock.take(m.metalId)) { this.sim.placeMetal(k, m.metalId); n++; } else miss++; });
+    this.syncMetals();
+    this.msg(miss ? `Ułożono ${n}, brakuje ${miss} – nie ma ich na palecie obok stanowiska.` : `Ułożono metale: ${n}.`, miss ? 'bad' : 'ok');
   }
 
   private msg(text: string | null, kind: 'ok' | 'bad' | 'info' = 'info') {
@@ -277,11 +323,13 @@ class PourScreen {
     this.ui.pauseBar.style.width = Math.min(100, p / s.bal.maxPauseSec * 100) + '%'; this.ui.pauseBar.parentElement!.classList.toggle('bad', p > s.bal.maxPauseSec * .7);
     this.ui.warn.hidden = !s.massWeak; this.ui.warn.textContent = 'Masa za długo stała – jest słaba i będzie się rozsypywać. Wyładuj ją przed dalszym sypaniem.';
     // tabela metali
-    const rows = s.metals.map(m => { const md = metalById(m.metalId); const cls = m.taps >= m.need ? 'ok' : m.buried ? 'bad' : ''; return `<tr><td>${m.metalId} · ${md?.weightKg.toString().replace('.', ',') ?? '?'} kg · ${m.slot}</td><td class="${cls}">${m.taps}/${m.need}</td></tr>`; }).join('');
+    const rows = s.metals.map(m => { const cls = !m.placed ? 'bad' : m.taps >= m.need ? 'ok' : m.buried ? 'bad' : ''; return `<tr><td>${m.slot}: ${m.placed ?? 'brak'} <span class="dim">(ma być ${m.metalId})</span></td><td class="${cls}">${m.placed ? `${m.taps}/${m.need}` : '–'}</td></tr>`; }).join('');
     if (this.ui.metals.innerHTML !== rows) this.ui.metals.innerHTML = rows;
     // znaczniki podbić i haków
     s.metals.forEach((m, k) => {
       const e = this.tapEls[k]; const q = this.project(m.x, .06 + Math.max(m.top, s.surface(m.x, m.z)) + .02, m.z); e.style.transform = `translate(${q.x}px,${q.y}px)`;
+      if (!s.started) { e.hidden = false; e.textContent = m.placed ?? '+'; e.className = 'tap place' + (m.placed ? ' set' : ' now'); return; }
+      e.hidden = !m.placed; if (!m.placed) { e.className = 'tap'; return; }
       const lvl = s.sandLevelNear(m.x, m.z); const now = !m.buried && m.taps < m.need && lvl >= m.top * .6;
       e.textContent = `${m.taps}/${m.need}`; e.className = 'tap' + (m.taps >= m.need ? ' ok' : m.buried ? ' bad' : now ? ' now' : '');
     });
@@ -295,7 +343,10 @@ class PourScreen {
     (this.ui.finish as HTMLButtonElement).disabled = !s.canFinish();
     const pending = s.metals.some((_, k) => this.tapEls[k].classList.contains('now'));
     const hookNow = s.hooks.some((hk, k) => !hk.placed && this.hookEls[k].classList.contains('now'));
-    this.ui.hint.textContent = !s.started ? 'Gałką w lewym dolnym rogu (albo W A S D) ustaw ramię nad modelem i wciśnij Start.'
+    const empty = s.metals.filter(m => !m.placed).length;
+    this.autoBtn.hidden = s.started || !empty; if (s.started && !this.chooser.hidden) this.chooser.hidden = true;
+    this.ui.hint.textContent = !s.started && empty ? `Najpierw metale: dotknij „+” na modelu i wybierz metal z palety (puste miejsca: ${empty}). Potem ustaw ramię i Start.`
+      : !s.started ? 'Gałką w lewym dolnym rogu (albo W A S D) ustaw ramię nad modelem i wciśnij Start.'
       : pending ? 'Masa dochodzi do metali – teraz podbijaj (dotknij licznika przy metalu).'
       : hookNow ? 'Teraz wstaw hak Ω (dotknij znacznika).'
       : fill >= .97 ? 'Model pełny – wciśnij Pauzę i Zakończ sypanie.'

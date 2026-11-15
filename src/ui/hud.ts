@@ -5,12 +5,13 @@ import type { Character } from '../services/backend';
 import { V } from '../game/render/build';
 import { buildMenu } from './menu';
 import { settings } from '../core/settings';
+import { Tutorial, tutorialSeen } from './tutorial';
 
 /** Interfejs na ekranie gry: statystyki, podpowiedzi, panel suwnicy, sterowanie dotykowe, etykiety. */
 export class Hud {
   root: HTMLElement;
   private labels: { el: HTMLElement; pos: () => ReturnType<typeof V> | null }[] = [];
-  private prompt: HTMLButtonElement; private menuEl!: HTMLElement;
+  private prompt: HTMLButtonElement; private menuEl!: HTMLElement; private tutorial!: Tutorial; private dyn = new Map<string, HTMLElement>(); private labelLayer!: HTMLElement;
   private toasts: HTMLElement;
   private cranePanel: HTMLElement;
   private swingBar: HTMLElement; private swingTxt: HTMLElement; private heightTxt: HTMLElement; private loadTxt: HTMLElement;
@@ -35,7 +36,7 @@ export class Hud {
       h('div', { class: 'row' }, h('span', { class: 'dim', text: 'Sypacz' }), this.roomEl),
     );
     // menu gry (ustawienia, pełny ekran, wylogowanie) – jeden przycisk zamiast kilku
-    const menu = buildMenu({ touch, onClose: () => this.toggleMenu(false), onLogout: () => opts.onLogout(),
+    const menu = buildMenu({ touch, onClose: () => this.toggleMenu(false), onTutorial: () => { this.toggleMenu(false); this.tutorial.start(); }, onLogout: () => opts.onLogout(),
       onFullscreen: () => { const p = document.documentElement.requestFullscreen?.(); p?.catch(() => this.toast('Pełny ekran nie jest dostępny w tej przeglądarce')); } });
     this.menuEl = menu.el; this.offs.push(menu.dispose);
     const menuBtn = h('button', { class: 'btn small menu-btn', type: 'button', 'aria-label': 'Menu gry', onclick: () => this.toggleMenu() }, h('span', { class: 'burger', text: '☰' }), h('span', { text: 'Menu' }));
@@ -107,7 +108,11 @@ export class Hud {
     parent.append(this.root);
 
     // etykiety w świecie
-    for (const l of game.world.labels) this.addLabel(labelLayer, l.text, () => l.pos, 'place');
+    this.labelLayer = labelLayer;
+    for (const l of game.world.labels) this.addLabel(labelLayer, l.text, () => l.pos, l.kind === 'box' ? 'boxtag' : 'place');
+    // samouczek: sam startuje przy pierwszym wejściu do gry
+    this.tutorial = new Tutorial(this.root, game, bus, touch); this.offs.push(() => this.tutorial.dispose());
+    if (!tutorialSeen() && !new URLSearchParams(location.search).has('zrzut')) this.tutorial.start();
     this.addLabel(labelLayer, character.name, () => game.playerPos().add(V(0, 2.3, 0)), 'me');
     this.addLabel(labelLayer, 'Tu możesz zaczepić', () => { if (game.mode !== 'crane' || !game.remote || game.remote.attached) return null; const o = game.remote.options(); return o.length ? game.remote.hookWorld().add(V(0, .5, 0)) : null; }, 'hint');
     for (const c of game.cranes) this.addLabel(labelLayer, c.name, () => game.mode === 'crane' && game.remote !== c ? null : V(c.state.x, 3.9, c.state.z), 'crane-tag').style.setProperty('--cc', c.station.color);
@@ -151,6 +156,24 @@ export class Hud {
     if (open) (this.menuEl.querySelector('button') as HTMLElement | null)?.focus();
   }
 
+  /** Dymki nad ruchomymi rzeczami: modele i formy (nazwa modelu), palety z metalami. */
+  private syncTags() {
+    const g = this.game; const seen = new Set<string>();
+    const put = (key: string, text: string, cls: string, x: number, y: number, z: number) => {
+      seen.add(key); let el = this.dyn.get(key);
+      if (!el) { el = h('div', { class: 'wlabel tag ' + cls }); this.labelLayer.append(el); this.dyn.set(key, el); }
+      if (el.textContent !== text) el.textContent = text;
+      const s = g.project(V(x, y, z)); el.style.display = s.visible ? '' : 'none';
+      if (s.visible) el.style.transform = `translate(${s.x}px,${s.y}px) translate(-50%,-100%)`;
+    };
+    for (const l of g.yard.loads) {
+      if (l.kind === 'form') put(l.id, `Forma ${l.def.number}`, 'form', l.x, l.y + l.height + .25, l.z);
+      else put(l.id, l.form ? `${l.def.number} · zasypany` : l.def.number, l.form ? 'form' : 'model', l.x, l.y + l.height + .25, l.z);
+    }
+    for (const s of g.transport.metalStacks()) put(s.id, `Metale × ${s.metals.length}`, 'metal', s.x, s.lift + s.count * .14 + .45, s.z);
+    for (const [k, el] of this.dyn) if (!seen.has(k)) { el.remove(); this.dyn.delete(k); }
+  }
+
   private setRemoteLabel() {
     const on = this.game.mode === 'crane';
     this.remoteBtn.replaceChildren(...(this.touch ? [] : [h('span', { class: 'key', text: 'C' })]), h('span', { text: on ? 'Chodzenie' : 'Steruj' }));
@@ -171,6 +194,7 @@ export class Hud {
       const s = g.project(p); if (!s.visible) { l.el.style.display = 'none'; continue; }
       l.el.style.display = ''; l.el.style.transform = `translate(${s.x}px,${s.y}px) translate(-50%,-100%)`;
     }
+    this.syncTags();
     if (this.roomEl.textContent !== g.room) this.roomEl.textContent = g.room;
     const cr = g.transport.canRotate(); if (this.rotBtn.hidden === cr) this.rotBtn.hidden = !cr;
     const c = g.remote;

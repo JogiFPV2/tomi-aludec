@@ -2,7 +2,7 @@ import { h } from './dom';
 import { settings, LIMITS, type Settings } from '../core/settings';
 
 /** Menu gry z ustawieniami: kamera, sterowanie, ekran. Zmiany działają od razu i zapisują się w przeglądarce. */
-export function buildMenu(o: { onClose: () => void; onLogout: () => void; onFullscreen: () => void; touch: boolean }): { el: HTMLElement; dispose: () => void } {
+export function buildMenu(o: { onClose: () => void; onLogout: () => void; onFullscreen: () => void; onTutorial: () => void; touch: boolean }): { el: HTMLElement; dispose: () => void } {
   type NumKey = keyof typeof LIMITS;
   const sync: ((s: Settings) => void)[] = [];
   const slider = (key: NumKey, label: string, hint: string, fmt: (v: number) => string, step: number) => {
@@ -20,6 +20,7 @@ export function buildMenu(o: { onClose: () => void; onLogout: () => void; onFull
   const card = h('section', { class: 'panel menu-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Menu gry' },
     h('header', { class: 'menu-h' }, h('div', { class: 'title', text: 'Menu' }), h('button', { class: 'btn pri', type: 'button', text: 'Wróć do gry', onclick: o.onClose })),
     h('div', { class: 'menu-body' },
+      h('div', { class: 'set row2' }, h('div', {}, h('div', { class: 'set-h', text: 'Samouczek' }), h('span', { class: 'dim small', text: 'Co i w jakiej kolejności robić – krok po kroku.' })), h('button', { class: 'btn', type: 'button', text: 'Uruchom', onclick: o.onTutorial })),
       h('h3', { text: 'Kamera' }),
       slider('camTilt', 'Kąt kamery', '12° – prawie z góry, 60° – mocno ukośnie, widać twarze i boki maszyn.', v => v.toFixed(0) + '°', 1),
       h('h3', { text: 'Sterowanie' }),

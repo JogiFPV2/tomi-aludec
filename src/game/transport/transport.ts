@@ -4,13 +4,14 @@ import type { Yard, Load } from '../crane/yard';
 import type { CollisionWorld } from '../world/collision';
 import type { EventBus } from '../../core/events';
 import { STATIONS, SLOT_X, MODELS, PALLET_STACKS, JACKS, type JackSpawn } from '../../data/layout';
+import { metalById } from '../../data/metals';
 import { PALLET, topOf, covers, stackAt, nearestStack, placeAt, takeTop, turnToward, type Stack, type TransportBalance } from './stacking';
 
 /**
  * Transport na hali: palety (stosy), noszenie palet w rękach i paleciaki (ręczne i elektryczne).
  * Ładunki z suwnic (modele, formy) stojące na palecie jadą razem z nią.
  */
-interface StackV extends Stack { mesh: THREE.Group; shown: number; jack: Jack | null }
+export interface StackV extends Stack { mesh: THREE.Group; shown: number; jack: Jack | null; /** metale leżące na wierzchniej palecie (sztuki) */ metals: string[]; shownMetals: string }
 export interface Jack { id: string; kind: JackSpawn['kind']; x: number; z: number; heading: number; carry: StackV | null; group: THREE.Group; forks: THREE.Group }
 export interface TAction { id: string; label: string; dist: number; run: () => void }
 interface P { x: number; z: number; heading: number }
@@ -30,6 +31,8 @@ export class Transport {
   hand = 0;
   /** obrót palety niesionej w rękach (true = dłuższym bokiem wzdłuż osi z) */
   handRot = false;
+  /** metale na palecie niesionej w rękach */
+  handMetals: string[] = [];
   private ghost: THREE.Mesh;
   private handMesh = new THREE.Group();
   private n = 0;
@@ -45,7 +48,7 @@ export class Transport {
 
   // ---------- budowa ----------
   addStack(x: number, z: number, count: number, rot = false): StackV {
-    const s: StackV = { id: 'pal-' + (++this.n), x, z, count, lift: 0, rot, mesh: new THREE.Group(), shown: -1, jack: null };
+    const s: StackV = { id: 'pal-' + (++this.n), x, z, count, lift: 0, rot, mesh: new THREE.Group(), shown: -1, jack: null, metals: [], shownMetals: '' };
     this.group.add(s.mesh); this.stacks.push(s); this.sync(s); return s;
   }
   private palletMesh(y: number): THREE.Group {
@@ -56,13 +59,46 @@ export class Transport {
     return g;
   }
   private sync(s: StackV) {
-    if (s.shown !== s.count) {
+    const sig = s.metals.join();
+    if (s.shown !== s.count || s.shownMetals !== sig) {
       for (const c of [...s.mesh.children]) { s.mesh.remove(c); c.traverse(o => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose(); }); }
       for (let i = 0; i < s.count; i++) s.mesh.add(this.palletMesh(i * PALLET.h));
-      s.shown = s.count;
+      if (s.metals.length) s.mesh.add(this.metalsMesh(s.metals, s.count * PALLET.h));
+      s.shown = s.count; s.shownMetals = sig;
     }
     s.mesh.position.set(s.x, s.lift, s.z); s.mesh.rotation.y = s.rot ? Math.PI / 2 : 0;
   }
+  /** Metale ułożone rzędami na palecie. */
+  private metalsMesh(items: string[], y: number): THREE.Group {
+    const g = new THREE.Group(); g.position.y = y;
+    items.slice(0, 16).forEach((id, i) => { const s = metalById(id)?.size ?? [.12, .08, .1]; const k = 1.7; g.add(this.b.box(s[0] * k, s[2] * k, s[1] * k, id.startsWith('U') ? 'steel' : 'chill', [-.5 + (i % 4) * .33, s[2] * k / 2, -.4 + Math.floor(i / 4) * .27])); });
+    return g;
+  }
+  /** Odświeża wygląd stosu po zmianie metali. */
+  refresh(s: StackV) { this.sync(s); }
+  /** Paleta, na którą można przekładać metale ze skrzyni: najpierw ta na widłach gracza, potem najbliższa leżąca obok. */
+  palletFor(x: number, z: number, reach: number): StackV | null {
+    const ok = (s: StackV) => s.count > 0 && !this.riders(s).length && Math.hypot(s.x - x, s.z - z) <= reach;
+    const c = this.holding?.carry; if (c && ok(c)) return c;
+    let best: StackV | null = null, bd = 1e9;
+    for (const s of this.stacks) { if (!ok(s)) continue; const d = Math.hypot(s.x - x, s.z - z) - (s.metals.length ? 5 : 0); if (d < bd) { bd = d; best = s; } }
+    return best;
+  }
+  /** Palety z metalami w zasięgu (np. obok stanowiska). */
+  metalStacks(x?: number, z?: number, reach = Infinity): StackV[] { return this.stacks.filter(s => s.metals.length && (x === undefined || Math.hypot(s.x - x, s.z - z!) <= reach)); }
+  /** Zdejmuje jedną sztukę metalu z palety w zasięgu. */
+  takeMetal(x: number, z: number, reach: number, id: string): boolean {
+    for (const s of this.metalStacks(x, z, reach)) { const i = s.metals.indexOf(id); if (i >= 0) { s.metals.splice(i, 1); this.sync(s); return true; } }
+    return false;
+  }
+  /** Odkłada sztukę metalu z powrotem na paletę w zasięgu. */
+  putMetal(x: number, z: number, reach: number, id: string): boolean {
+    const s = this.metalStacks(x, z, reach)[0] ?? this.stacks.find(s => !s.jack && !this.riders(s).length && Math.hypot(s.x - x, s.z - z) <= reach);
+    if (!s) return false; s.metals.push(id); this.sync(s); return true;
+  }
+  /** Środek wideł prowadzonego paleciaka (do sprawdzania, czy paleta stoi przy skrzyni). */
+  forkWorld(): { x: number; z: number } | null { return this.holding ? this.forkPoint(this.holding) : null; }
+
   private removeStack(s: StackV) { this.group.remove(s.mesh); this.stacks = this.stacks.filter(x => x !== s); s.count = 0; s.shown = -1; s.mesh.traverse(o => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose(); }); }
 
   private addJack(sp: JackSpawn) {
@@ -128,7 +164,7 @@ export class Transport {
     const d = dir(p.heading); const x = p.x + d.x * 1.15, z = p.z + d.z * 1.15;
     const f = this.col.resolve(x, z, .5);
     if (Math.hypot(f.x - x, f.z - z) > .12) return { ok: false, x, z, y: 0, rot: this.handRot, why: 'Tu nie ma miejsca na paletę – odsuń się od ściany lub maszyny.' };
-    const pl = placeAt(this.stacks, x, z, this.hand, this.bal, s => this.riders(s).length > 0 || !!(s as StackV).jack, null, this.handRot);
+    const pl = placeAt(this.stacks, x, z, this.hand, this.bal, s => this.riders(s).length > 0 || (s as StackV).metals.length > 0 || !!(s as StackV).jack, null, this.handRot);
     if (pl.kind === 'blocked') return { ok: false, x, z, y: 0, rot: this.handRot, why: pl.reason === 'full' ? `Stos jest pełny (maks. ${this.bal.maxStack} palet).` : pl.reason === 'occupied' ? 'Na tej palecie coś stoi.' : 'Paleta zahacza o inną – podejdź bliżej stosu albo odsuń się.' };
     if (pl.kind === 'merge') { const t = pl.target as StackV; return { ok: true, x: t.x, z: t.z, y: topOf(t), rot: !!t.rot, target: t }; }
     return { ok: true, x, z, y: 0, rot: this.handRot };
@@ -147,10 +183,11 @@ export class Transport {
     this.hand = n;
     for (const c of [...this.handMesh.children]) { this.handMesh.remove(c); c.traverse(o => { if ((o as THREE.Mesh).isMesh) (o as THREE.Mesh).geometry.dispose(); }); }
     for (let i = 0; i < n; i++) this.handMesh.add(this.palletMesh(i * PALLET.h));
+    if (!n) this.handMetals = []; else if (this.handMetals.length) this.handMesh.add(this.metalsMesh(this.handMetals, n * PALLET.h));
     this.changed();
   }
   private changed() {
-    this.bus.emit('transport:changed', this.holding ? { holding: 'jack', label: 'Puść paleciak', what: this.holding.kind === 'electric' ? 'Paleciak elektryczny' : 'Paleciak ręczny' } : this.hand ? { holding: 'hand', label: this.hand > 1 ? 'Odłóż palety' : 'Odłóż paletę', what: this.hand > 1 ? '2 palety w rękach' : 'Paleta w rękach' } : null);
+    this.bus.emit('transport:changed', this.holding ? { holding: 'jack', label: 'Puść paleciak', what: this.holding.kind === 'electric' ? 'Paleciak elektryczny' : 'Paleciak ręczny' } : this.hand ? { holding: 'hand', label: this.hand > 1 ? 'Odłóż palety' : 'Odłóż paletę', what: this.handMetals.length ? `Paleta z metalami (${this.handMetals.length})` : this.hand > 1 ? '2 palety w rękach' : 'Paleta w rękach' } : null);
   }
 
   // ---------- akcje ----------
@@ -171,9 +208,9 @@ export class Transport {
         if (r.length === 1 && r[0].kind === 'model' && !occ) return { id: `in-${st.id}-${i}`, label: `Wstaw model na rolotok (miejsce ${i + 1})`, dist: 0, run: () => this.toRoller(r[0], sx, st.z, st.name, i) };
         if (!r.length && occ && !occ.heldBy) return { id: `out-${st.id}-${i}`, label: `Zdejmij model z rolotoku (miejsce ${i + 1})`, dist: 0, run: () => this.fromRoller(occ, c) };
       }
-      return { id: 'drop-' + c.id, label: r.length ? `Odstaw paletę (${r[0].kind === 'form' ? 'z formą' : 'z modelem'})` : `Odstaw ${c.count === 1 ? 'paletę' : `palety (${c.count})`}`, dist: 0, run: () => this.dropStack(j) };
+      return { id: 'drop-' + c.id, label: r.length ? `Odstaw paletę (${r[0].kind === 'form' ? 'z formą' : 'z modelem'})` : c.metals.length ? `Odstaw paletę z metalami (${c.metals.length})` : `Odstaw ${c.count === 1 ? 'paletę' : `palety (${c.count})`}`, dist: 0, run: () => this.dropStack(j) };
     }
-    const free = (s: StackV) => !s.jack && s.count > 0 && !this.riders(s).length;
+    const free = (s: StackV) => !s.jack && s.count > 0 && !this.riders(s).length && !(this.hand && (s.metals.length || this.handMetals.length));
     if (this.hand) {
       if (this.hand >= this.bal.handMax) return null;
       const s = nearestStack(this.stacks.filter(free), p.x, p.z, 1.5) as StackV | null;
@@ -182,7 +219,7 @@ export class Transport {
     let best: TAction | null = null;
     for (const jk of this.jacks) { const d = Math.hypot(jk.x - p.x, jk.z - p.z); if (d < 1.3 && (!best || d < best.dist)) best = { id: 'jack-' + jk.id, label: `Weź ${jackName(jk.kind)}`, dist: d, run: () => this.takeJack(jk, p) }; }
     const s = nearestStack(this.stacks.filter(free), p.x, p.z, 1.4) as StackV | null;
-    if (s) { const d = Math.hypot(s.x - p.x, s.z - p.z); if (!best || d < best.dist) best = { id: 'take-' + s.id, label: s.count > 1 ? `Podnieś paletę ze stosu (${s.count})` : 'Podnieś paletę', dist: d, run: () => this.takeByHand(s) }; }
+    if (s) { const d = Math.hypot(s.x - p.x, s.z - p.z); if (!best || d < best.dist) best = { id: 'take-' + s.id, label: s.metals.length ? `Podnieś paletę z metalami (${s.metals.length})` : s.count > 1 ? `Podnieś paletę ze stosu (${s.count})` : 'Podnieś paletę', dist: d, run: () => this.takeByHand(s) }; }
     return best;
   }
 
@@ -192,8 +229,8 @@ export class Transport {
     if (!this.hand) return;
     const t = this.dropPoint(p);
     if (!t.ok) { this.bus.emit('toast', { text: t.why!, kind: 'bad' }); return; }
-    if (t.target) { t.target.count += this.hand; this.sync(t.target); this.bus.emit('toast', { text: `Paleta odłożona na stos (${t.target.count}).`, kind: 'ok' }); }
-    else { this.addStack(t.x, t.z, this.hand, t.rot); this.bus.emit('toast', { text: this.hand > 1 ? 'Palety odłożone.' : 'Paleta odłożona.', kind: 'ok' }); }
+    if (t.target) { t.target.count += this.hand; t.target.metals = this.handMetals; this.sync(t.target); this.bus.emit('toast', { text: `Paleta odłożona na stos (${t.target.count}).`, kind: 'ok' }); }
+    else { const ns = this.addStack(t.x, t.z, this.hand, t.rot); ns.metals = this.handMetals; this.sync(ns); this.bus.emit('toast', { text: this.hand > 1 ? 'Palety odłożone.' : 'Paleta odłożona.', kind: 'ok' }); }
     this.setHand(0);
   }
 
@@ -209,6 +246,7 @@ export class Transport {
   private takeByHand(s: StackV) {
     const k = takeTop(s, 1); if (!k) return;
     if (!this.hand) this.handRot = !!s.rot;
+    if (s.metals.length) { this.handMetals = s.metals; s.metals = []; }
     if (s.count === 0) this.removeStack(s); else this.sync(s);
     this.setHand(this.hand + k);
     this.bus.emit('toast', { text: this.hand > 1 ? 'Niesiesz dwie palety – idziesz wolniej.' : 'Niesiesz paletę – idziesz wolniej. Żółty ślad pokazuje, gdzie ją odłożysz; możesz ją obrócić.' });
@@ -218,11 +256,11 @@ export class Transport {
     this.bus.emit('toast', { text: 'Paleta na widłach.', kind: 'ok' });
   }
   private dropStack(j: Jack) {
-    const c = j.carry!; const pl = placeAt(this.stacks, c.x, c.z, c.count, this.bal, s => this.riders(s).length > 0 || !!(s as StackV).jack, c, c.rot);
+    const c = j.carry!; const pl = placeAt(this.stacks, c.x, c.z, c.count, this.bal, s => this.riders(s).length > 0 || (s as StackV).metals.length > 0 || !!(s as StackV).jack, c, c.rot);
     if (pl.kind === 'blocked') { this.bus.emit('toast', { text: pl.reason === 'full' ? `Stos byłby za wysoki (maks. ${this.bal.maxStack} palet).` : pl.reason === 'occupied' ? 'Na tamtej palecie coś stoi.' : 'Paleta zahacza o inną – ustaw się równo nad stosem albo obok.', kind: 'bad' }); return; }
     j.carry = null; c.jack = null;
     if (pl.kind === 'merge') {
-      const t = pl.target as StackV; const r = this.riders(c); t.count += c.count; this.shift(r, t.x - c.x, topOf(t) - topOf(c), t.z - c.z); this.removeStack(c); this.sync(t);
+      const t = pl.target as StackV; const r = this.riders(c); t.count += c.count; t.metals = c.metals; c.metals = []; this.shift(r, t.x - c.x, topOf(t) - topOf(c), t.z - c.z); this.removeStack(c); this.sync(t);
       this.bus.emit('toast', { text: `Palety ułożone w stos (${t.count}).`, kind: 'ok' });
     } else { this.moveStack(c, c.x, c.z, 0); this.bus.emit('toast', { text: 'Paleta odstawiona.', kind: 'ok' }); }
     this.place(j);

@@ -15,7 +15,11 @@ import { Input } from './input/input';
 import type { EventBus } from '../core/events';
 import type { Balance } from '../core/balance';
 import type { Backend, Character } from '../services/backend';
-import { ROOMS, SPAWN, MODELS, STATIONS, SLOT_X, LADLE } from '../data/layout';
+import { ROOMS, SPAWN, MODELS, STATIONS, SLOT_X, LADLE, METAL_BOXES } from '../data/layout';
+import { METALS } from '../data/metals';
+import { modelById } from '../data/models';
+import { fillBox, seeded } from './metals/box';
+import type { StackV } from './transport/transport';
 
 export interface GameOptions { container: HTMLElement; backend: Backend; character: Character; balance: Balance; bus: EventBus; lowQuality: boolean }
 interface Interactable { id: string; label: string; pos: () => THREE.Vector3; radius: number; use: () => void }
@@ -34,6 +38,10 @@ export class Game {
   readonly yard: Yard;
   readonly transport: Transport;
   private hadJack = false;
+  /** skrzynie z metalami: zawartość (sztuki) */
+  readonly boxes: { id: string; modelId: string; x: number; z: number; items: string[] }[] = [];
+  /** otwarte przekładanie metali: która skrzynia i na którą paletę */
+  metalSession: { box: Game['boxes'][number]; pallet: StackV } | null = null;
   private vel = { x: 0, z: 0 }; private unwatch: () => void = () => {};
   private ink: InkPass; private atmo: Atmosphere; private paper: HTMLElement; private craneLights: THREE.PointLight[] = [];
   /** suwnica, której pilota trzyma gracz */
@@ -126,7 +134,11 @@ export class Game {
       if (!next) { bus.emit('toast', { text: 'Wszystkie modele na rolotoku są zasypane. Wyciągnij formy suwnicą (zaczep za haki formy).', kind: 'info' }); return; }
       bus.emit('pour:open', { stationId: m.stationId, loadId: next.id, modelId: next.def.id });
     } });
-    this.interactables.push({ id: 'metals', label: 'Pojemnik z metalami', radius: 1.4, pos: () => V(14.5, 0, 13), use: () => bus.emit('toast', { text: 'Przekładanie metali na paletę dodamy w kolejnym etapie.' }) });
+    METAL_BOXES.forEach((bx, i) => {
+      const def = modelById(bx.modelId)!;
+      this.boxes.push({ ...bx, items: fillBox(def, METALS, this.o.balance.metals, seeded(31 + i * 7)) });
+      this.world.labels.push({ text: `Metale do ${def.number}`, pos: V(bx.x, 1.5, bx.z), kind: 'box' });
+    });
   }
 
   get balance(): Balance { return this.o.balance; }
@@ -209,6 +221,12 @@ export class Game {
       let best: Nearby | null = null, bd = 1e9;
       const busy = !!this.transport.holding || this.transport.hand > 0;
       if (!busy) for (const it of this.interactables) { const q = it.pos(); const d = Math.hypot(q.x - this.player.x, q.z - this.player.z); if (d < it.radius && d < bd) { bd = d; best = { id: it.id, label: it.label, use: it.use }; } }
+      // skrzynia z metalami: wystarczy stać obok albo podjechać widłami z paletą
+      const fk = this.transport.forkWorld();
+      for (const bx of this.boxes) {
+        const d = Math.min(Math.hypot(bx.x - this.player.x, bx.z - this.player.z), fk ? Math.hypot(bx.x - fk.x, bx.z - fk.z) : 1e9);
+        if (d < 2.1 && d < bd) { bd = this.transport.holding ? -1 : d; best = { id: 'box-' + bx.id, label: `Szukaj metali (${modelById(bx.modelId)!.number})`, use: () => this.openBox(bx) }; }
+      }
       const ta = this.transport.action(this.player);
       if (ta && ta.dist < bd) best = { id: ta.id, label: ta.label, use: () => { ta.run(); this.afterTransport(); } };
       if (best?.id !== this.nearby?.id || best?.label !== this.nearby?.label) this.o.bus.emit('interact:available', best ? { id: best.id, label: best.label } : null);
@@ -240,6 +258,22 @@ export class Game {
     this.camPos.set(this.camTarget.x, CAM_H, this.camTarget.z + CAM_H * Math.tan(settings.v.camTilt * Math.PI / 180));
     this.camera.position.copy(this.camPos); this.camera.lookAt(this.camTarget);
     this.sun.position.set(this.camTarget.x - 11, 15, this.camTarget.z - 13); this.sun.target.position.copy(this.camTarget);
+  }
+
+  /** Otwiera przekładanie metali ze skrzyni na paletę stojącą obok (albo na widłach). */
+  private openBox(bx: Game['boxes'][number]) {
+    const bus = this.o.bus;
+    if (this.transport.hand) { bus.emit('toast', { text: 'Odłóż paletę obok skrzyni („Odłóż paletę”), wtedy przełożysz na nią metale.', kind: 'info' }); return; }
+    const pallet = this.transport.palletFor(bx.x, bx.z, this.o.balance.metals.reach);
+    if (!pallet) { bus.emit('toast', { text: 'Potrzebna pusta paleta przy skrzyni: podjedź z nią paleciakiem albo przynieś w rękach i odłóż obok.', kind: 'info' }); return; }
+    this.metalSession = { box: bx, pallet }; this.input.reset(); bus.emit('metals:open', { boxId: bx.id });
+  }
+  /** Zamyka przekładanie: odświeża paletę, a gdy skrzynia prawie pusta – wózkowy dowozi metale. */
+  closeBox() {
+    const s = this.metalSession; if (!s) return; this.metalSession = null;
+    this.transport.refresh(s.pallet);
+    if (s.box.items.length < this.o.balance.metals.refillBelow) { s.box.items.push(...fillBox(modelById(s.box.modelId)!, METALS, this.o.balance.metals, seeded(Date.now() % 100000 + 3))); this.o.bus.emit('toast', { text: 'Wózkowy dowiózł metale do skrzyni.', kind: 'info' }); }
+    this.o.bus.emit('metals:closed', { boxId: s.box.id });
   }
 
   /** Po wzięciu paleciaka gracz staje za dyszlem. */
