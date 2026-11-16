@@ -6,7 +6,7 @@
 1. Wypchnięcie na gałąź `main` uruchamia GitHub Actions: testy → budowa → pliki gry na gałąź `hostinger`.
 2. Hostinger pobiera gałąź `hostinger` do strony **tomi.mypinsy.com** (katalog `public_html/tomi` na koncie `u980737058`).
 3. Workflow sprawdza plik `wersja.json`: nowa wersja musi być na `tomi.mypinsy.com` i nie może pojawić się na `mypinsy.com` – inaczej wdrożenie kończy się błędem.
-4. Workflow „Straż” co 6 godzin sprawdza, czy gra działa, a gdy nie – wdraża ją ponownie.
+4. Workflow „Straż” co 6 godzin sprawdza, czy gra działa, a gdy nie – wdraża ją ponownie (pusty zapis na gałęzi `hostinger`).
 
 ## Układ katalogów na serwerze
 ```
