@@ -7,4 +7,12 @@
   ExpiresByType application/javascript "access plus 1 year"
   ExpiresByType text/css "access plus 1 year"
   ExpiresByType text/html "access plus 0 seconds"
+  ExpiresByType application/json "access plus 0 seconds"
+</IfModule>
+# Gra leży w katalogu public_html/tomi, czyli wewnątrz strony mypinsy.com.
+# Własne (puste) reguły przepisywania sprawiają, że reguły strony głównej z katalogu wyżej
+# (np. przekierowania albo „wszystko do index.html”) nie działają w katalogu gry.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^index\.html$ - [L]
 </IfModule>

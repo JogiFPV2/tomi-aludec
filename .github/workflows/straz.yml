@@ -1,0 +1,48 @@
+# Straż: co 6 godzin sprawdza, czy gra działa pod tomi.mypinsy.com.
+# Gdyby katalog gry zniknął (np. po wgraniu strony mypinsy.com), wdraża grę ponownie.
+name: Straż – czy gra jest na tomi.mypinsy.com
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: wdrozenie
+  cancel-in-progress: false
+env:
+  GRA: https://tomi.mypinsy.com
+jobs:
+  straz:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Czy gra odpowiada?
+        id: test
+        run: |
+          ok=0
+          for i in 1 2 3; do
+            if curl -fsS --max-time 20 "$GRA/wersja.json?t=$RANDOM$i" | grep -q '"gra":"tomi-aludec"' && curl -fsS --max-time 20 "$GRA/?t=$RANDOM$i" | grep -q '<title>Tomi Aludec</title>'; then ok=1; break; fi
+            sleep 30
+          done
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+          [ "$ok" = 1 ] && echo "Gra działa." || echo "::warning::Gra nie odpowiada pod $GRA – wdrażam ponownie."
+      - uses: actions/checkout@v4
+        if: steps.test.outputs.ok != '1'
+        with:
+          ref: hostinger
+      - name: Wdróż ponownie (pusty zapis na gałęzi hostinger)
+        if: steps.test.outputs.ok != '1'
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git commit -q --allow-empty -m "Ponowne wdrożenie (straż)"
+          git push origin hostinger
+      - name: Sprawdź po ponownym wdrożeniu
+        if: steps.test.outputs.ok != '1'
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 20 "$GRA/wersja.json?t=$RANDOM$i" | grep -q '"gra":"tomi-aludec"'; then echo "Gra wróciła."; exit 0; fi
+            sleep 20
+          done
+          echo "::error::Gra nadal nie działa pod $GRA. Sprawdź w hPanelu: Strony → tomi.mypinsy.com → GIT (repozytorium tomi-aludec, gałąź hostinger)."
+          exit 1

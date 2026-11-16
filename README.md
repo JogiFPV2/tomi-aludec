@@ -96,3 +96,7 @@ python3 tools/mh_convert.py /tmp/mh/makehuman/data
 
 Kształt (płeć, wzrost, tusza, brzuch, twarz) to ważone „morfy”, a ubrania, włosy i zarost to powłoki na skórze
 (`src/game/character/human.ts`, `src/game/character/worker.ts`).
+
+## Wdrażanie
+
+Gra wdraża się wyłącznie na `tomi.mypinsy.com` – szczegóły i zasady w [WDRAZANIE.md](WDRAZANIE.md).

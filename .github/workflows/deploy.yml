@@ -1,12 +1,19 @@
 # Po każdym wypchnięciu na gałąź main: testy, budowa gry i zapis gotowych plików na gałąź „hostinger”.
-# Hostinger (hPanel → Zaawansowane → GIT) pobiera gałąź „hostinger” do public_html.
-name: Buduj i przygotuj do wdrożenia
+# Hostinger pobiera gałąź „hostinger” WYŁĄCZNIE do strony tomi.mypinsy.com (katalog public_html/tomi).
+# Na końcu sprawdzamy, że nowa wersja jest na tomi.mypinsy.com i że NIE trafiła na mypinsy.com.
+name: Buduj i wdrażaj na tomi.mypinsy.com
 on:
   push:
     branches: [main]
   workflow_dispatch:
 permissions:
   contents: write
+concurrency:
+  group: wdrozenie
+  cancel-in-progress: false
+env:
+  GRA: https://tomi.mypinsy.com
+  STRONA_GLOWNA: https://mypinsy.com
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,6 +26,8 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - name: Znacznik wersji (do sprawdzania, gdzie trafiło wdrożenie)
+        run: echo "{\"gra\":\"tomi-aludec\",\"commit\":\"${GITHUB_SHA}\"}" > dist/wersja.json
       - name: Zapisz zbudowaną grę na gałęzi hostinger
         run: |
           cd dist
@@ -29,3 +38,18 @@ jobs:
           git add -A
           git commit -q -m "Wdrożenie ${GITHUB_SHA::7}"
           git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" hostinger
+      - name: Sprawdź, że nowa wersja jest na tomi.mypinsy.com
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 20 "$GRA/wersja.json?t=$RANDOM$i" | grep -q "$GITHUB_SHA"; then echo "Nowa wersja jest na $GRA"; exit 0; fi
+            sleep 20
+          done
+          echo "::error::Po 10 minutach na $GRA nadal nie ma tej wersji. Sprawdź w hPanelu wdrażanie z GIT dla tomi.mypinsy.com."
+          exit 1
+      - name: Sprawdź, że gra NIE trafiła na mypinsy.com
+        run: |
+          if curl -fsS --max-time 20 "$STRONA_GLOWNA/wersja.json?t=$RANDOM" 2>/dev/null | grep -q "$GITHUB_SHA"; then
+            echo "::error::Ta wersja gry pojawiła się na $STRONA_GLOWNA! Usuń w hPanelu wdrażanie repozytorium tomi-aludec ze strony mypinsy.com (ma być tylko przy tomi.mypinsy.com)."
+            exit 1
+          fi
+          echo "Strona główna nietknięta."
