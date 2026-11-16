@@ -5,13 +5,14 @@ import type { Character } from '../services/backend';
 import { V } from '../game/render/build';
 import { buildMenu } from './menu';
 import { settings } from '../core/settings';
+import { clockParts, type GameClock } from '../core/clock';
 import { Tutorial, tutorialSeen } from './tutorial';
 
 /** Interfejs na ekranie gry: statystyki, podpowiedzi, panel suwnicy, sterowanie dotykowe, etykiety. */
 export class Hud {
   root: HTMLElement;
   private labels: { el: HTMLElement; pos: () => ReturnType<typeof V> | null }[] = [];
-  private prompt: HTMLButtonElement; private menuEl!: HTMLElement; private tutorial!: Tutorial; private dyn = new Map<string, HTMLElement>(); private labelLayer!: HTMLElement;
+  private prompt: HTMLButtonElement; private menuEl!: HTMLElement; private clockEl!: HTMLElement; private clock!: GameClock; private clockAt = 0; private tutorial!: Tutorial; private dyn = new Map<string, HTMLElement>(); private labelLayer!: HTMLElement;
   private toasts: HTMLElement;
   private cranePanel: HTMLElement;
   private swingBar: HTMLElement; private swingTxt: HTMLElement; private heightTxt: HTMLElement; private loadTxt: HTMLElement;
@@ -26,12 +27,13 @@ export class Hud {
   private lastToast = new Map<string, number>();
   private pointsEl: HTMLElement;
 
-  constructor(parent: HTMLElement, private game: Game, bus: EventBus, character: Character, opts: { onLogout: () => void; dev: boolean }) {
+  constructor(parent: HTMLElement, private game: Game, bus: EventBus, character: Character, opts: { clock: GameClock; onLogout: () => void; dev: boolean }) {
     const touch = this.touch = document.body.classList.contains('touch');
     this.roomEl = h('div', { class: 'dim small' });
     this.pointsEl = h('span', { class: 'num pts', text: `${character.points} pkt` });
+    this.clockEl = h('div', { class: 'eyebrow clock' }); this.clock = opts.clock; this.tickClock();
     const stats = h('section', { class: 'panel stats' },
-      h('div', { class: 'eyebrow', text: 'Tomi Aludec · zmiana I' }),
+      this.clockEl,
       h('div', { class: 'row top' }, h('div', { class: 'title', text: character.name }), this.pointsEl),
       h('div', { class: 'row' }, h('span', { class: 'dim', text: 'Sypacz' }), this.roomEl),
     );
@@ -167,11 +169,21 @@ export class Hud {
       if (s.visible) el.style.transform = `translate(${s.x}px,${s.y}px) translate(-50%,-100%)`;
     };
     for (const l of g.yard.loads) {
-      if (l.kind === 'form') put(l.id, `Forma ${l.def.number}`, 'form', l.x, l.y + l.height + .25, l.z);
+      if (l.kind === 'form') {
+        const p = l.paint; const st = !p || p.state === 'raw' ? '' : p.state === 'wet' ? ` · farba schnie ${Math.floor(p.t / 60)}:${String(Math.floor(p.t % 60)).padStart(2, '0')}` : p.state === 'burning' ? ` · pali się ${Math.ceil(p.t)} s` : ' · gotowa';
+        put(l.id, `Forma ${l.def.number}${st}`, p?.state === 'ready' ? 'form ready' : p?.state === 'burning' ? 'form burn' : 'form', l.x, l.y + l.height + .25, l.z);
+      }
       else put(l.id, l.form ? `${l.def.number} · zasypany` : l.def.number, l.form ? 'form' : 'model', l.x, l.y + l.height + .25, l.z);
     }
     for (const s of g.transport.metalStacks()) put(s.id, `Metale × ${s.metals.length}`, 'metal', s.x, s.lift + s.count * .14 + .45, s.z);
     for (const [k, el] of this.dyn) if (!seen.has(k)) { el.remove(); this.dyn.delete(k); }
+  }
+
+  /** Data, godzina (czas serwera) i zmiana – odświeżane co kilka sekund. */
+  private tickClock() {
+    const now = performance.now(); if (now - this.clockAt < 5000 && this.clockAt) return; this.clockAt = now;
+    const p = clockParts(this.clock.now()); const t = `Zmiana ${p.shift} · ${p.date} · ${p.time}`;
+    if (this.clockEl.textContent !== t) this.clockEl.textContent = t;
   }
 
   private setRemoteLabel() {
@@ -195,6 +207,7 @@ export class Hud {
       l.el.style.display = ''; l.el.style.transform = `translate(${s.x}px,${s.y}px) translate(-50%,-100%)`;
     }
     this.syncTags();
+    this.tickClock();
     if (this.roomEl.textContent !== g.room) this.roomEl.textContent = g.room;
     const cr = g.transport.canRotate(); if (this.rotBtn.hidden === cr) this.rotBtn.hidden = !cr;
     const c = g.remote;

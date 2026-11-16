@@ -22,6 +22,8 @@ export interface GameEvents {
   'remote:changed': { stationId: string; color: string; name: string } | null;
   'points:changed': { points: number; delta: number; reason?: string };
   'game:pause': { paused: boolean };
+  /** malarz rdzeni zaczyna malować formę */
+  'paint:open': { loadId: string };
   /** gracz otworzył skrzynię z metalami (przekładanie na paletę) */
   'metals:open': { boxId: string };
   'metals:closed': { boxId: string };

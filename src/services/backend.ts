@@ -30,6 +30,12 @@ export interface Backend {
   getBalance(): Promise<{ key: string; value: unknown }[]>;
   /** Dodaje (lub odejmuje) punkty postaci na serwerze. Zwraca nowy stan punktów. */
   addPoints(delta: number, reason: string): Promise<number>;
+  /** Ile razy gracz oglądał instrukcję każdego modelu. */
+  getInstructionViews(): Promise<Record<string, number>>;
+  /** Zapisuje podgląd instrukcji modelu; zwraca, który to podgląd. */
+  viewInstruction(modelId: string): Promise<number>;
+  /** Czas serwera w milisekundach (wspólny zegar gry). */
+  serverNow(): Promise<number>;
 }
 
 /** Tłumaczy typowe komunikaty serwera na zrozumiałe zdania po polsku. */

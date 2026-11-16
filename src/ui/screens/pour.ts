@@ -1,3 +1,4 @@
+import type { InstructionService } from '../instruction';
 import type { Game } from '../../game/Game';
 import { STATIONS } from '../../data/layout';
 import { countBy } from '../../game/metals/box';
@@ -27,7 +28,7 @@ export class PourController {
   private screen: PourScreen | null = null;
   private off: (() => void)[] = [];
 
-  constructor(private wrap: HTMLElement, private bus: EventBus, private balance: Balance, private lowQ: boolean, private game: Game) {
+  constructor(private wrap: HTMLElement, private bus: EventBus, private balance: Balance, private lowQ: boolean, private game: Game, private instr: InstructionService) {
     this.off.push(bus.on('pour:open', ({ stationId, loadId, modelId }) => this.open(stationId, loadId, modelId)));
   }
 
@@ -47,7 +48,7 @@ export class PourController {
       take: id => tr.takeMetal(st.x, st.z, reach, id),
       put: id => { if (!tr.putMetal(st.x, st.z, reach, id)) this.bus.emit('toast', { text: 'Nie ma obok palety, na którą można odłożyć metal – przepadł.', kind: 'bad' }); },
     };
-    this.screen = new PourScreen(this.wrap, s.sim, this.bus, this.lowQ, stationId, stock, (result) => {
+    this.screen = new PourScreen(this.wrap, s.sim, this.bus, this.lowQ, stationId, stock, () => this.instr.open(modelId), (result) => {
       if (result) {
         const hooks = s!.sim.hooks.filter(hk => hk.placed).map(hk => ({ x: hk.x, z: hk.z, ok: hk.depthOk }));
         this.saved.delete(loadId); this.bus.emit('pour:finished', { stationId, loadId, modelId, points: result.points, breakdown: result.breakdown, hooks });
@@ -77,7 +78,7 @@ class PourScreen {
   private offKeys: () => void;
   private lastMsg = new Map<string, number>();
 
-  constructor(parent: HTMLElement, private sim: PourSim, private bus: EventBus, lowQ: boolean, stationId: string, private stock: MetalStock, private onClose: (r: PourResult | null) => void) {
+  constructor(parent: HTMLElement, private sim: PourSim, private bus: EventBus, lowQ: boolean, stationId: string, private stock: MetalStock, private onInstruction: () => void, private onClose: (r: PourResult | null) => void) {
     const def = sim.def;
     this.mats = new Materials(lowQ); this.b = new Builder(this.mats);
     this.renderer = new THREE.WebGLRenderer({ antialias: !lowQ, preserveDrawingBuffer: new URLSearchParams(location.search).has('zrzut') });
@@ -116,7 +117,7 @@ class PourScreen {
     const metalNames = def.metals.map(m => `${m.metalId}`);
     sim.metals.forEach((m, k) => { const e = h('button', { class: 'tap', type: 'button', 'aria-label': `Podbij metal ${metalNames[k]} (${m.slot})`, onclick: (ev: Event) => { ev.stopPropagation(); if (this.sim.started) this.tap(k); else this.openChooser(k); } }); tagLayer.append(e); this.tapEls.push(e); });
     this.chooser = h('div', { class: 'panel pchooser', hidden: true });
-    this.autoBtn = h('button', { class: 'btn', type: 'button', text: 'Ułóż pasujące z palety', onclick: () => this.autoPlace() });
+    this.autoBtn = h('button', { class: 'btn', type: 'button', text: 'Instrukcja modelu', onclick: () => this.onInstruction() });
     sim.hooks.forEach((_, k) => { const e = h('button', { class: 'hookmk', type: 'button', 'aria-label': 'Wstaw hak', text: 'Ω', onclick: (ev: Event) => { ev.stopPropagation(); this.hook(k); } }); tagLayer.append(e); this.hookEls.push(e); });
 
     const canvasBox = h('div', { class: 'pcanvas' }, this.renderer.domElement, tagLayer);
@@ -189,20 +190,12 @@ class PourScreen {
       this.sim.placeMetal(k, id); this.syncMetals(); this.chooser.hidden = true;
     };
     this.chooser.replaceChildren(
-      h('div', { class: 'row' }, h('b', { text: `Miejsce: ${m.slot}` }), h('span', { class: 'dim', text: `wg instrukcji: ${m.metalId}` })),
+      h('div', { class: 'row' }, h('b', { text: `Miejsce: ${m.slot}` }), h('span', { class: 'dim', text: 'Który metal? Sprawdź w instrukcji.' })),
       ids.length ? h('div', { class: 'pch-list' }, ...ids.map(id => h('button', { class: 'btn', type: 'button', onclick: () => pick(id) }, h('b', { text: id }), h('span', { class: 'dim', text: ` × ${c[id]}` }))))
         : h('p', { class: 'dim', text: 'Obok stanowiska nie ma palety z metalami. Przywieź metale ze skrzyni i odstaw paletę przy stanowisku.' }),
       h('div', { class: 'pch-acts' }, m.placed ? h('button', { class: 'btn', type: 'button', text: `Zdejmij ${m.placed}`, onclick: () => pick(null) }) : null, h('button', { class: 'btn', type: 'button', text: 'Anuluj', onclick: () => { this.chooser.hidden = true; } })));
     this.chooser.hidden = false;
   }
-  /** Układa we wszystkich pustych miejscach właściwe metale, o ile są na palecie. */
-  private autoPlace() {
-    let n = 0, miss = 0;
-    this.sim.metals.forEach((m, k) => { if (m.placed) return; if (this.stock.take(m.metalId)) { this.sim.placeMetal(k, m.metalId); n++; } else miss++; });
-    this.syncMetals();
-    this.msg(miss ? `Ułożono ${n}, brakuje ${miss} – nie ma ich na palecie obok stanowiska.` : `Ułożono metale: ${n}.`, miss ? 'bad' : 'ok');
-  }
-
   private msg(text: string | null, kind: 'ok' | 'bad' | 'info' = 'info') {
     if (!text) return; const now = performance.now(); if ((this.lastMsg.get(text) ?? 0) > now - 1500) return; this.lastMsg.set(text, now);
     this.bus.emit('toast', { text, kind });
@@ -323,7 +316,7 @@ class PourScreen {
     this.ui.pauseBar.style.width = Math.min(100, p / s.bal.maxPauseSec * 100) + '%'; this.ui.pauseBar.parentElement!.classList.toggle('bad', p > s.bal.maxPauseSec * .7);
     this.ui.warn.hidden = !s.massWeak; this.ui.warn.textContent = 'Masa za długo stała – jest słaba i będzie się rozsypywać. Wyładuj ją przed dalszym sypaniem.';
     // tabela metali
-    const rows = s.metals.map(m => { const cls = !m.placed ? 'bad' : m.taps >= m.need ? 'ok' : m.buried ? 'bad' : ''; return `<tr><td>${m.slot}: ${m.placed ?? 'brak'} <span class="dim">(ma być ${m.metalId})</span></td><td class="${cls}">${m.placed ? `${m.taps}/${m.need}` : '–'}</td></tr>`; }).join('');
+    const rows = s.metals.map(m => { const cls = !m.placed ? 'bad' : m.taps >= m.need ? 'ok' : m.buried ? 'bad' : ''; return `<tr><td>${m.slot}: ${m.placed ?? 'brak'}</td><td class="${cls}">${m.placed ? `${m.taps}/${m.need}` : '–'}</td></tr>`; }).join('');
     if (this.ui.metals.innerHTML !== rows) this.ui.metals.innerHTML = rows;
     // znaczniki podbić i haków
     s.metals.forEach((m, k) => {
@@ -344,8 +337,8 @@ class PourScreen {
     const pending = s.metals.some((_, k) => this.tapEls[k].classList.contains('now'));
     const hookNow = s.hooks.some((hk, k) => !hk.placed && this.hookEls[k].classList.contains('now'));
     const empty = s.metals.filter(m => !m.placed).length;
-    this.autoBtn.hidden = s.started || !empty; if (s.started && !this.chooser.hidden) this.chooser.hidden = true;
-    this.ui.hint.textContent = !s.started && empty ? `Najpierw metale: dotknij „+” na modelu i wybierz metal z palety (puste miejsca: ${empty}). Potem ustaw ramię i Start.`
+    if (s.started && !this.chooser.hidden) this.chooser.hidden = true;
+    this.ui.hint.textContent = !s.started && empty ? `Najpierw metale: dotknij „+” na modelu i wybierz metal z palety (puste miejsca: ${empty}). Co gdzie leży, pokazuje instrukcja. Potem ustaw ramię i Start.`
       : !s.started ? 'Gałką w lewym dolnym rogu (albo W A S D) ustaw ramię nad modelem i wciśnij Start.'
       : pending ? 'Masa dochodzi do metali – teraz podbijaj (dotknij licznika przy metalu).'
       : hookNow ? 'Teraz wstaw hak Ω (dotknij znacznika).'

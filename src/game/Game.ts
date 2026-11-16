@@ -15,7 +15,8 @@ import { Input } from './input/input';
 import type { EventBus } from '../core/events';
 import type { Balance } from '../core/balance';
 import type { Backend, Character } from '../services/backend';
-import { ROOMS, SPAWN, MODELS, STATIONS, SLOT_X, LADLE, METAL_BOXES } from '../data/layout';
+import { ROOMS, SPAWN, MODELS, STATIONS, SLOT_X, LADLE, METAL_BOXES, inPaintZone } from '../data/layout';
+import { PaintShop } from './paint/shop';
 import { METALS } from '../data/metals';
 import { modelById } from '../data/models';
 import { fillBox, seeded } from './metals/box';
@@ -37,6 +38,7 @@ export class Game {
   readonly cranes: Crane[] = [];
   readonly yard: Yard;
   readonly transport: Transport;
+  readonly paintShop: PaintShop;
   private hadJack = false;
   /** skrzynie z metalami: zawartość (sztuki) */
   readonly boxes: { id: string; modelId: string; x: number; z: number; items: string[] }[] = [];
@@ -90,6 +92,7 @@ export class Game {
     for (const m of MODELS) this.yard.addModel(m);
     this.transport = new Transport(b, this.yard, this.world.col, o.balance.transport, o.bus); this.scene.add(this.transport.group);
     this.yard.palletTopAt = (x, z) => this.transport.palletTopAt(x, z);
+    this.paintShop = new PaintShop(this.yard, o.bus, o.balance.paint, lowQuality);
     for (const st of STATIONS) { const c = new Crane(b, o.bus, this.yard, (x, z) => Math.max(this.world.supportAt(x, z), this.transport.supportAt(x, z)), st, o.balance); this.cranes.push(c); this.scene.add(c.group); }
     this.offPour = o.bus.on('pour:finished', r => { const l = this.yard.loads.find(x => x.id === r.loadId); if (l) this.yard.fillModel(l, { hooks: r.hooks, seed: Math.floor(Math.random() * 1e9), points: r.points }); });
     this.atmo = new Atmosphere(b, lowQuality); this.scene.add(this.atmo.group); this.world.col.addCircle({ x: LADLE.x, z: LADLE.z, r: 1 }); this.world.labels.push({ text: 'Kadź z aluminium', pos: V(LADLE.x, 1.9, LADLE.z) });
@@ -110,7 +113,7 @@ export class Game {
   }
   private wheel: (e: WheelEvent) => void;
 
-  setZoom(z: number) { this.zoom = Math.min(22, Math.max(6, z)); this.onResize(); }
+  setZoom(z: number) { this.zoom = Math.min(36, Math.max(6, z)); this.onResize(); }
 
   private setupInteractables() {
     const bus = this.o.bus;
@@ -225,7 +228,17 @@ export class Game {
       const fk = this.transport.forkWorld();
       for (const bx of this.boxes) {
         const d = Math.min(Math.hypot(bx.x - this.player.x, bx.z - this.player.z), fk ? Math.hypot(bx.x - fk.x, bx.z - fk.z) : 1e9);
-        if (d < 2.1 && d < bd) { bd = this.transport.holding ? -1 : d; best = { id: 'box-' + bx.id, label: `Szukaj metali (${modelById(bx.modelId)!.number})`, use: () => this.openBox(bx) }; }
+        // skrzynia ma pierwszeństwo przed leżącą obok paletą (inaczej nie dałoby się jej otworzyć, stojąc przy palecie)
+        const eff = this.transport.holding ? -1 : d - 1.2;
+        if (d < 2.1 && eff < bd) { bd = eff; best = { id: 'box-' + bx.id, label: `Szukaj metali (${modelById(bx.modelId)!.number})`, use: () => this.openBox(bx) }; }
+      }
+      // malarnia rdzeni: forma stojąca na palecie w strefie malarni
+      if (!busy) for (const l of this.yard.loads) {
+        if (l.kind !== 'form' || l.heldBy || !inPaintZone(l.x, l.z)) continue;
+        const st = l.paint?.state ?? 'raw'; if (st === 'burning' || st === 'ready') continue;
+        const pt = this.transport.palletTopAt(l.x, l.z); if (pt === null || Math.abs(l.y - pt) > .04) continue;
+        const d = Math.hypot(l.x - this.player.x, l.z - this.player.z);
+        if (d < 2.3 && d < bd) { bd = d; best = { id: 'paint-' + l.id + st, label: st === 'wet' ? `Domaluj / podpal rdzeń (${l.def.number})` : `Maluj rdzeń (${l.def.number})`, use: () => { this.input.reset(); this.o.bus.emit('paint:open', { loadId: l.id }); } }; }
       }
       const ta = this.transport.action(this.player);
       if (ta && ta.dist < bd) best = { id: ta.id, label: ta.label, use: () => { ta.run(); this.afterTransport(); } };
@@ -245,7 +258,7 @@ export class Game {
     this.avatar.animate(dt, this.player.speed);
     const room = ROOMS.find(r => this.player.x >= r.x0 && this.player.x <= r.x1 && this.player.z >= r.z0 && this.player.z <= r.z1)?.name ?? '';
     if (room !== this.room) this.room = room;
-    this.atmo.update(dt);
+    this.atmo.update(dt); this.paintShop.update(dt);
     this.craneLights.forEach((l, i) => { const c = this.cranes[i]; l.position.set(c.state.x, 1.9, c.state.z); l.intensity = 3 + Math.min(1, Math.hypot(c.state.vx, c.state.vz)) * 9 * (.6 + .4 * Math.sin(performance.now() / 90)); });
     this.updateCamera(dt);
     this.saveT += dt; if (this.saveT > 15) { this.saveT = 0; this.savePosition(); }

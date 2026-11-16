@@ -22,6 +22,8 @@ export interface Load {
   /** model: zasypana forma w środku */
   form: FormInfo | null;
   formMesh: THREE.Group | null;
+  /** forma: stan siwej farby (malarnia rdzeni) */
+  paint?: import('../paint/paint').CorePaint;
   /** forma: model, z którego została wyjęta */
   parent?: Load;
   /** czyja suwnica trzyma ładunek */

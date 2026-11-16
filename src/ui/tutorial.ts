@@ -1,7 +1,7 @@
 import { h } from './dom';
 import type { Game } from '../game/Game';
 import type { EventBus } from '../core/events';
-import { STATIONS, SLOT_X } from '../data/layout';
+import { STATIONS, SLOT_X, inPaintZone, PAINT } from '../data/layout';
 
 /**
  * Samouczek: krótka lista kroków „co i w jakiej kolejności”. Każdy krok zalicza się sam,
@@ -23,7 +23,7 @@ export const STEPS: Step[] = [
     done: g => g.transport.hand > 0 || !!g.transport.holding?.carry },
   { title: 'Skrzynia z metalami', text: 'Zawieź paletę do skrzyni z metalami do swojego modelu (dymek „Metale do …”) i wybierz „Szukaj metali”. Niesioną w rękach paletę najpierw odłóż obok.',
     done: (_g, f) => f.boxOpened },
-  { title: 'Przełóż metale', text: 'Przeciągnij na paletę metale potrzebne na formę. Czytaj numery – co dziesiąty metal w skrzyni jest do innego modelu.',
+  { title: 'Przełóż metale', text: 'Otwórz „Instrukcję modelu”, sprawdź numery i przeciągnij potrzebne metale na paletę. Co dziesiąty metal w skrzyni jest do innego modelu.',
     done: g => !g.metalSession && (g.transport.metalStacks().length > 0 || g.transport.handMetals.length > 0) },
   { title: 'Metale pod stanowisko', text: 'Zawieź paletę z metalami obok stanowiska sypacza i odstaw ją tam.',
     done: g => STATIONS.some(st => g.transport.metalStacks(st.x, st.z, g.balance.metals.stationReach).some(s => !s.jack)) },
@@ -31,12 +31,16 @@ export const STEPS: Step[] = [
     done: g => !!g.remote },
   { title: 'Model na rolotok', text: 'Suwnicą zaczep model za uchwyty, podnieś, przewieź nad rolotok, opuść i odczep. Na rolotoku mieszczą się 3 modele.',
     done: g => onRoller(g) },
-  { title: 'Sypanie', text: 'Podejdź do mieszarki. Najpierw ułóż metale w modelu („+”), potem Start, prowadź ramię, podbijaj metale, wstaw haki Ω i zakończ sypanie.',
+  { title: 'Sypanie', text: 'Podejdź do mieszarki. Najpierw ułóż metale w modelu („+”, numery są w instrukcji), potem Start, prowadź ramię, podbijaj metale, wstaw haki Ω i zakończ sypanie.',
     done: (_g, f) => f.poured },
   { title: 'Wyciągnij formę', text: 'Suwnicą zaczep za haki formy i podnoś powoli. Pilnuj poziomu – przechył to kara, a duży przechył to pęknięta forma.',
     done: g => g.yard.loads.some(l => l.kind === 'form') },
-  { title: 'Forma na paletę', text: 'Odłóż formę na pustą paletę przy stanowisku i odczep. Potem możesz sypać ten sam model jeszcze raz albo wstawić inny.',
+  { title: 'Forma na paletę', text: 'Odłóż formę na pustą paletę przy stanowisku i odczep. Dalej formą zajmuje się malarz rdzeni.',
     done: g => g.yard.loads.some(l => l.kind === 'form' && !l.heldBy && g.transport.palletTopAt(l.x, l.z) !== null && Math.abs(l.y - g.transport.palletTopAt(l.x, l.z)!) < .04) },
+  { title: 'Forma do malarni', text: `Paleciakiem zabierz paletę z formą i zawieź ją do strefy „${PAINT.name}” (niebieska ramka w południowej części hali). Odstaw ją tam.`,
+    done: g => g.yard.loads.some(l => l.kind === 'form' && !l.heldBy && inPaintZone(l.x, l.z) && !g.transport.holding?.carry) },
+  { title: 'Pomaluj i podpal', text: 'Podejdź do formy i wybierz „Maluj rdzeń”. Pokryj cały wierzch siwą farbą, potem „Podpal farbę” – gdy ogień zgaśnie, forma jest gotowa.',
+    done: g => g.yard.loads.some(l => l.paint?.state === 'burning' || l.paint?.state === 'ready') },
 ];
 
 export class Tutorial {
@@ -71,7 +75,7 @@ export class Tutorial {
     const s = STEPS[this.i];
     if (!s) {
       this.el.replaceChildren(h('div', { class: 'eyebrow', text: 'Samouczek' }), h('div', { class: 'tutor-t', text: 'To cały cykl pracy' }),
-        h('p', { text: 'Paleta → metale → model na rolotok → sypanie → forma na paletę. Samouczek znajdziesz zawsze w menu.' }),
+        h('p', { text: 'Paleta → metale → model na rolotok → sypanie → forma na paletę → malarnia → farba i ogień. Samouczek znajdziesz zawsze w menu.' }),
         h('div', { class: 'tutor-a end' }, h('button', { class: 'btn pri', type: 'button', text: 'Zamknij', onclick: () => this.stop() })));
       clearInterval(this.timer); markSeen(); return;
     }

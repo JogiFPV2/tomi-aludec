@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Builder } from './build';
-import { STATIONS, LADLE } from '../../data/layout';
+import { STATIONS, LADLE, PAINT } from '../../data/layout';
 
 /**
  * Nastrój hali: lampy nad stanowiskami, żar z kadzi z ciekłym aluminium (migocze, sypie iskrami)
@@ -14,6 +14,7 @@ export class Atmosphere {
 
   constructor(b: Builder, low: boolean) {
     for (const st of STATIONS) { const l = new THREE.PointLight(0xffc27a, low ? 22 : 26, 13, 1.5); l.position.set(st.x - .5, 6, st.z + 1.2); this.group.add(l); this.lamps.push(l); }
+    { const l = new THREE.PointLight(0xdfeaff, low ? 26 : 32, 16, 1.5); l.position.set((PAINT.x0 + PAINT.x1) / 2, 6, (PAINT.z0 + PAINT.z1) / 2); this.group.add(l); this.lamps.push(l); }
     // kadź
     const { x, z } = LADLE; const g = new THREE.Group(); g.position.set(x, 0, z); this.group.add(g);
     g.add(b.cyl(.72, .6, .95, 'dark', [0, .5, 0], undefined, 20), b.cyl(.78, .78, .1, 'steel', [0, .98, 0], undefined, 20));

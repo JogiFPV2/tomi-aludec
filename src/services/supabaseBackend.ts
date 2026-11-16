@@ -66,6 +66,22 @@ export class SupabaseBackend implements Backend {
     return data as number;
   }
 
+  async getInstructionViews() {
+    const { data, error } = await this.sb.from('instruction_views').select('model_id,views');
+    if (error) { console.warn('[backend] nie udało się pobrać licznika instrukcji', error.message); return {}; }
+    return Object.fromEntries((data ?? []).map(r => [r.model_id as string, r.views as number]));
+  }
+  async viewInstruction(modelId: string) {
+    const { data, error } = await this.sb.rpc('view_instruction', { p_model: modelId });
+    if (error) throw new Error(plError(error.message));
+    return data as number;
+  }
+  async serverNow() {
+    const { data, error } = await this.sb.rpc('server_now');
+    if (error || !data) return Date.now();
+    return new Date(data as string).getTime();
+  }
+
   async getBalance() {
     const { data, error } = await this.sb.from('balance').select('key,value');
     if (error) { console.warn('[backend] nie udało się pobrać balansu – używam domyślnego', error.message); return []; }

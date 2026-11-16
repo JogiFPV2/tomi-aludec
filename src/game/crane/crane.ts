@@ -5,7 +5,7 @@ import { createLift, stepLift, tiltOf, imbalanceOf, extractScore, type LiftState
 import { Yard, MODEL_BASE, WALL_H, type Load } from './yard';
 import type { Balance } from '../../core/balance';
 import type { EventBus } from '../../core/events';
-import { STATIONS, SLOT_X, REMOTE_OFF, CRANE_START_Z, type Station } from '../../data/layout';
+import { STATIONS, SLOT_X, REMOTE_OFF, CRANE_START_Z, CRANE_BAY_D, type Station } from '../../data/layout';
 
 export type AttachKind = 'model' | 'form';
 export interface AttachOption { kind: AttachKind; load: Load; label: string }
@@ -36,16 +36,16 @@ export class Crane {
 
   constructor(b: Builder, private bus: EventBus, private yard: Yard, private support: (x: number, z: number) => number, readonly station: Station, private bal: Balance) {
     const st = station;
-    this.state = createCrane(st.x, CRANE_START_Z, { ropeTop: 3.05, hookY: 2.2, limits: { x: [st.bay[0] + .6, st.bay[1] - .6], z: [1.2, 20.8], y: [0.3, 2.65] } });
+    this.state = createCrane(st.x, CRANE_START_Z, { ropeTop: 3.05, hookY: 2.2, limits: { x: [st.bay[0] + .6, st.bay[1] - .6], z: [1.2, CRANE_BAY_D - 1.2], y: [0.3, 2.65] } });
     this.colorMat = b.mats.color(st.color, 'crane-' + st.id);
     const g = this.group; g.add(this.bridge, this.hook);
     // most (dwa dźwigary wzdłuż osi z) z obramówką w kolorze suwnicy
     for (const s of [-1, 1]) {
-      this.bridge.add(b.box(.2, .34, 21.6, 'yellow', [s * .38, 3.25, 11]));
+      this.bridge.add(b.box(.2, .34, CRANE_BAY_D - .4, 'yellow', [s * .38, 3.25, CRANE_BAY_D / 2]));
       // delikatna obramówka: cienki pasek po zewnętrznej krawędzi dźwigara
-      this.bridge.add(b.box(.035, .06, 21.6, this.colorMat, [s * .49, 3.4, 11]), b.box(.04, .025, 21.6, this.colorMat, [s * .465, 3.43, 11]));
+      this.bridge.add(b.box(.035, .06, CRANE_BAY_D - .4, this.colorMat, [s * .49, 3.4, CRANE_BAY_D / 2]), b.box(.04, .025, CRANE_BAY_D - .4, this.colorMat, [s * .465, 3.43, CRANE_BAY_D / 2]));
     }
-    for (const z of [.3, 21.7]) this.bridge.add(b.box(1.36, .32, .52, 'yellow', [0, 3.15, z]), b.box(1.4, .06, .56, this.colorMat, [0, 3.33, z]));
+    for (const z of [.3, CRANE_BAY_D - .3]) this.bridge.add(b.box(1.36, .32, .52, 'yellow', [0, 3.15, z]), b.box(1.4, .06, .56, this.colorMat, [0, 3.33, z]));
     this.bridge.add(this.trolley);
     this.trolley.add(b.box(1.2, .36, 1.0, 'yellow', [0, 3.55, 0]), b.cyl(.22, .22, .9, 'dark', [0, 3.4, 0], [0, 0, Math.PI / 2], 12));
     this.trolley.add(b.box(1.26, .06, 1.06, this.colorMat, [0, 3.76, 0]), b.box(.5, .3, .04, this.colorMat, [0, 3.62, .52]));

@@ -18,6 +18,7 @@ const DEFS: Record<string, MatDef> = {
   lockerBlue: { c: 0x3e6f9e, t: 'steel', tint: 0x7fa7d0 }, bench: { c: 0x8e6a42, t: 'wood', tint: 0xffffff }, rack: { c: 0x2f5fa0 }, rackBeam: { c: 0xe0661c },
   eyeW: { c: 0xece8e2 }, pupil: { c: 0x0a0a0a }, lip: { c: 0x9c5d50 }, frame: { c: 0x151515 }, lens: { c: 0xb8d4e8, transparent: .3, r: .1 },
   redBtn: { c: 0xd2261c, e: 0x200000 }, lamp: { c: 0xfff1d6, emit: 1 }, window: { c: 0xdfeaff, emit: 1 }, sign: { c: 0x2f9a52 },
+  paintGrey: { c: 0x9aa3ab }, paintLine: { c: 0x8fd0e8 },
   molten: { c: 0xff7d1a, emit: 1 }, moltenCore: { c: 0xffd45a, emit: 1 },
   target: { c: 0xf2b705, emit: 1, transparent: .85 }, ghost: { c: 0xf2b705, emit: 1, transparent: .4 }, shadow: { c: 0x000000, transparent: .25 },
 };

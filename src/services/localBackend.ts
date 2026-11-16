@@ -55,6 +55,10 @@ export class LocalBackend implements Backend {
     Object.assign(d.characters[d.session], patch); save();
   }
   async getBalance() { return []; }
+  private viewsKey() { return 'tomi.lokalny.instrukcje.' + (db().session ?? ''); }
+  async getInstructionViews() { try { return JSON.parse(localStorage.getItem(this.viewsKey()) ?? '{}') as Record<string, number>; } catch { return {}; } }
+  async viewInstruction(modelId: string) { const v = await this.getInstructionViews(); v[modelId] = (v[modelId] ?? 0) + 1; try { localStorage.setItem(this.viewsKey(), JSON.stringify(v)); } catch { /* tryb prywatny */ } return v[modelId]; }
+  async serverNow() { return Date.now(); }
   async addPoints(delta: number) {
     const d = db(); const c = d.session ? d.characters[d.session] : undefined; if (!c) throw new Error('Brak postaci');
     c.points = Math.max(0, c.points + Math.max(-1000, Math.min(1000, Math.round(delta)))); save(); return c.points;

@@ -4,7 +4,8 @@ import type { EventBus } from '../../core/events';
 import type { Balance } from '../../core/balance';
 import { modelById } from '../../data/models';
 import { metalById } from '../../data/metals';
-import { needFor, countBy, moveItem, setsIn } from '../../game/metals/box';
+import { countBy, moveItem } from '../../game/metals/box';
+import type { InstructionService } from '../instruction';
 
 /**
  * Szukanie metali: z lewej paleta gracza, z prawej zawartość skrzyni.
@@ -12,13 +13,13 @@ import { needFor, countBy, moveItem, setsIn } from '../../game/metals/box';
  */
 export class MetalsController {
   private off: (() => void)[] = []; private close: (() => void) | null = null;
-  constructor(private wrap: HTMLElement, private game: Game, private bus: EventBus, private balance: Balance) {
+  constructor(private wrap: HTMLElement, private game: Game, private bus: EventBus, private balance: Balance, private instr: InstructionService) {
     this.off.push(bus.on('metals:open', () => this.open()));
   }
 
   private open() {
     const ses = this.game.metalSession; if (!ses || this.close) return;
-    const def = modelById(ses.box.modelId)!; const need = needFor(def); const cap = this.balance.metals.palletCap;
+    const def = modelById(ses.box.modelId)!; const cap = this.balance.metals.palletCap;
     const pal = ses.pallet.metals, box = ses.box.items;
     this.bus.emit('game:pause', { paused: true });
 
@@ -35,10 +36,9 @@ export class MetalsController {
       zonePal.replaceChildren(...pal.map((id, i) => tile(id, 'pal', i)), ...(pal.length ? [] : [h('p', { class: 'dim mempty', text: 'Paleta jest pusta. Przeciągnij tu metale ze skrzyni.' })]));
       zoneBox.replaceChildren(...box.map((id, i) => tile(id, 'box', i)));
       palTitle.textContent = `Twoja paleta · ${pal.length}/${cap}`; boxTitle.textContent = `Skrzynia · ${box.length} szt.`;
-      const have = countBy(pal);
-      needEl.replaceChildren(...Object.entries(need).map(([id, n]) => h('span', { class: 'chip' + ((have[id] ?? 0) >= n ? ' ok' : '') }, h('b', { text: id }), ` ${have[id] ?? 0} / ${n}`)));
-      const wrong = pal.filter(id => !(id in need)).length;
-      setsEl.textContent = `Kompletów na formę: ${setsIn(pal, need)}` + (wrong ? ` · inne metale: ${wrong}` : '');
+      // na palecie: ile sztuk którego numeru (bez podpowiedzi, czy pasują – od tego jest instrukcja)
+      needEl.replaceChildren(...Object.entries(countBy(pal)).sort().map(([id, n]) => h('span', { class: 'chip' }, h('b', { text: id }), ` × ${n}`)));
+      setsEl.textContent = '';
     };
     const move = (zone: string, i: number) => {
       const ok = zone === 'box' ? moveItem(box, pal, i, cap) : moveItem(pal, box, i);
@@ -73,10 +73,10 @@ export class MetalsController {
     const root = h('div', { class: 'screen metals' },
       h('header', { class: 'panel mhead' },
         h('div', {}, h('div', { class: 'eyebrow', text: 'Skrzynia z metalami' }), h('div', { class: 'title', text: `${def.number} · ${def.name}` })),
-        h('div', { class: 'mneed-wrap' }, h('span', { class: 'dim small', text: 'Na jedną formę:' }), needEl),
+        h('div', { class: 'mneed-wrap' }, h('span', { class: 'dim small', text: 'Na palecie:' }), needEl, h('button', { class: 'btn', type: 'button', text: 'Instrukcja modelu', onclick: () => this.instr.open(def.id) })),
         h('button', { class: 'btn pri', type: 'button', text: 'Gotowe', onclick: done })),
       h('div', { class: 'mcols' }, colPal, colBox),
-      h('p', { class: 'mhelp dim small', text: 'Przeciągnij metal na drugą stronę albo po prostu go dotknij. Czytaj numery – w skrzyni leżą też metale do innych modeli.' }));
+      h('p', { class: 'mhelp dim small', text: 'Przeciągnij metal na drugą stronę albo po prostu go dotknij. Które numery są potrzebne, pokazuje instrukcja – w skrzyni leżą też metale do innych modeli.' }));
     root.addEventListener('pointerdown', down); root.addEventListener('pointermove', moveEv); root.addEventListener('pointerup', up); root.addEventListener('pointercancel', cancel);
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); done(); } };
     addEventListener('keydown', key, true);

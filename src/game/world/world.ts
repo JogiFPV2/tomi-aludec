@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Builder, V } from '../render/build';
 import { CollisionWorld } from './collision';
-import { ROOMS, WALLS, STATIONS, COLUMNS, METAL_BOXES, DOORS, SLOT_X, MIXER_OFF, FORM_PALLETS_OFF } from '../../data/layout';
+import { ROOMS, WALLS, STATIONS, COLUMNS, METAL_BOXES, DOORS, SLOT_X, MIXER_OFF, FORM_PALLETS_OFF, HALL, CRANE_BAY_D, PAINT } from '../../data/layout';
 
 /** Buduje świat z danych układu: podłogi, ściany, stanowiska, wyposażenie, kolizje i podłoża. */
 export interface Support { x0: number; z0: number; x1: number; z1: number; h: number }
@@ -40,7 +40,7 @@ export class World {
       this.col.addRect({ x0: Math.min(wl.x0, wl.x1) - t / 2, z0: Math.min(wl.z0, wl.z1) - t / 2, x1: Math.max(wl.x0, wl.x1) + t / 2, z1: Math.max(wl.z0, wl.z1) + t / 2 });
     }
     // okna w północnej ścianie hali
-    for (let x = 3; x < 36; x += 5) this.group.add(b.box(3, 1.2, .05, 'window', [x, 2.2, .13]));
+    for (let x = 3; x < HALL.w; x += 5) this.group.add(b.box(3, 1.2, .05, 'window', [x, 2.2, .13]));
     for (const d of DOORS) if (d.label) this.labels.push({ text: d.label, pos: V(d.x, 2.6, d.z) });
     // znak wyjścia
     this.group.add(b.box(.5, .2, .05, 'sign', [-.2, 2.6, 15]));
@@ -49,11 +49,14 @@ export class World {
   private buildHall() {
     const b = this.b, g = this.group;
     // linie bezpieczeństwa
-    for (const z of [3.2, 10.6]) g.add(b.box(34, .006, .1, 'core', [18, .003, z]));
+    const bayW = STATIONS[STATIONS.length - 1].bay[1];
+    for (const z of [3.2, 10.6]) g.add(b.box(bayW - 2, .006, .1, 'core', [bayW / 2, .003, z]));
+    // żółta linia: koniec nawy suwnic / droga transportowa
+    for (const z of [CRANE_BAY_D + 1.2, CRANE_BAY_D + 4.6]) g.add(b.box(HALL.w - 4, .006, .12, 'yellow', [HALL.w / 2, .003, z]));
     // słupy
     for (const [x, z] of COLUMNS) { g.add(b.box(.45, 3.2, .45, 'yellow', [x, 1.6, z])); this.col.addRect({ x0: x - .25, z0: z - .25, x1: x + .25, z1: z + .25 }); }
     // tory suwnicy wzdłuż ścian
-    g.add(b.box(36, .3, .25, 'yellow', [18, 3.0, .3]), b.box(36, .3, .25, 'yellow', [18, 3.0, 21.7]));
+    g.add(b.box(bayW, .3, .25, 'yellow', [bayW / 2, 3.0, .3]), b.box(bayW, .3, .25, 'yellow', [bayW / 2, 3.0, CRANE_BAY_D - .3]));
     // stanowiska: rolotok + mieszarka
     for (const st of STATIONS) {
       const s = new THREE.Group(); s.position.set(st.x, 0, st.z); g.add(s);
@@ -87,7 +90,7 @@ export class World {
       this.labels.push({ text: st.name, pos: V(st.x, 1.7, st.z) });
     }
     // regały z modelami przy północnej ścianie
-    for (let x = 3; x <= 33; x += 4.2) {
+    for (let x = 3; x <= bayW - 3; x += 4.2) {
       const r = new THREE.Group(); r.position.set(x, 0, 1.4); g.add(r);
       for (const dx of [-1.7, 1.7]) for (const dz of [-.5, .5]) r.add(b.box(.09, 2.6, .09, 'rack', [dx, 1.3, dz]));
       for (const y of [.2, 1.3, 2.4]) for (const dz of [-.5, .5]) r.add(b.box(3.5, .1, .08, 'rackBeam', [0, y, dz]));
@@ -95,7 +98,7 @@ export class World {
       this.col.addRect({ x0: x - 1.8, z0: .8, x1: x + 1.8, z1: 2 });
     }
     // gotowe formy na paletach (stałe)
-    for (let i = 0; i < 4; i++) { const x = 21 + i * 1.8, z = 18.8; this.pallet(x, z); g.add(b.box(1.44, .5, 1.04, 'sand', [x, .39, z])); }
+    for (let i = 0; i < 6; i++) { const x = 66 + i * 1.8, z = 44.5; this.pallet(x, z); g.add(b.box(1.44, .5, 1.04, 'sand', [x, .39, z])); }
     // pojemnik na metale
     for (const bx of METAL_BOXES) {
       g.add(b.box(1.6, .7, 1.1, 'steel', [bx.x, .35, bx.z]), b.box(1.44, .04, .94, 'dark', [bx.x, .69, bx.z]));
@@ -103,12 +106,28 @@ export class World {
       this.col.addRect({ x0: bx.x - .8, z0: bx.z - .55, x1: bx.x + .8, z1: bx.z + .55 });
     }
     // wózek widłowy (stoi)
-    const fk = new THREE.Group(); fk.position.set(31, 0, 17); fk.rotation.y = -Math.PI / 2; g.add(fk);
+    this.buildPaintShop();
+    const fk = new THREE.Group(); fk.position.set(74, 0, 38); fk.rotation.y = -Math.PI / 2; g.add(fk);
     fk.add(b.box(1.2, .7, 2, 'orange', [0, .6, 0]), b.box(1.1, .06, 1.5, 'dark', [0, 2.25, .1]));
     for (const x of [-.5, .5]) for (const z of [.8, -.6]) fk.add(b.box(.06, 1.3, .06, 'dark', [x, 1.6, z]));
     for (const [x, z] of [[-.58, .6], [.58, .6], [-.55, -.7], [.55, -.7]]) fk.add(b.cyl(.28, .28, .25, 'rubber', [x, .28, z], [0, 0, Math.PI / 2], 14));
     for (const x of [-.3, .3]) fk.add(b.box(.1, .05, 1.1, 'steel', [x, .05, 1.7]));
-    this.col.addRect({ x0: 29.8, z0: 16.3, x1: 33.6, z1: 17.7 });
+    this.col.addRect({ x0: 72.8, z0: 37.3, x1: 76.6, z1: 38.7 });
+  }
+
+  /** Malarnia rdzeni: wyznaczona strefa, miejsca na palety z formami, stół z siwą farbą i palnik. */
+  private buildPaintShop() {
+    const b = this.b, g = this.group, P = PAINT; const w = P.x1 - P.x0, d = P.z1 - P.z0, cx = (P.x0 + P.x1) / 2, cz = (P.z0 + P.z1) / 2;
+    for (const [bw, bd, x, z] of [[w, .14, cx, P.z0], [w, .14, cx, P.z1], [.14, d, P.x0, cz], [.14, d, P.x1, cz]]) g.add(b.box(bw, .006, bd, 'paintLine', [x, .004, z]));
+    for (const [x, z] of P.spots) for (const [bw, bd, dx, dz] of [[1.8, .05, 0, .75], [1.8, .05, 0, -.75], [.05, 1.5, .9, 0], [.05, 1.5, -.9, 0]]) g.add(b.box(bw, .006, bd, 'core', [x + dx, .004, z + dz]));
+    // stół z farbą: wiadra z siwą farbą, pędzel, palnik gazowy
+    const s = P.stand; g.add(b.box(1.8, .08, .8, 'bench', [s.x, .85, s.z]));
+    for (const dx of [-.8, .8]) for (const dz of [-.3, .3]) g.add(b.box(.07, .85, .07, 'steel', [s.x + dx, .42, s.z + dz]));
+    for (const dx of [-.55, -.1]) g.add(b.cyl(.17, .15, .3, 'steel', [s.x + dx, 1.04, s.z], undefined, 14), b.cyl(.15, .15, .02, 'paintGrey', [s.x + dx, 1.2, s.z], undefined, 14));
+    g.add(b.box(.5, .04, .06, 'pallet', [s.x + .4, .91, s.z - .15]), b.box(.12, .05, .1, 'paintGrey', [s.x + .68, .92, s.z - .15]));
+    g.add(b.cyl(.09, .09, .5, 'red', [s.x + .5, 1.14, s.z + .2], undefined, 12), b.cyl(.02, .02, .3, 'steel', [s.x + .5, 1.5, s.z + .2], undefined, 8));
+    this.col.addRect({ x0: s.x - 1, z0: s.z - .5, x1: s.x + 1, z1: s.z + .5 });
+    this.labels.push({ text: P.name, pos: V(cx, 1.2, P.z0 + .6) }, { text: 'Siwa farba i palnik', pos: V(s.x, 2, s.z) });
   }
 
   pallet(x: number, z: number) {
