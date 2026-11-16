@@ -43,7 +43,7 @@ export class PaintController {
       fireBtn.disabled = p.state !== 'wet';
       hint.textContent = p.state === 'raw' ? 'Przeciągaj palcem albo myszką po formie – nakładasz siwą farbę. Pomaluj cały wierzch.'
         : cov < bal.minCover ? `Pomalowane ${Math.round(cov * 100)}% – na pełne punkty trzeba ${Math.round(bal.minCover * 100)}%.`
-        : 'Rdzeń pomalowany. Podpal farbę, żeby szybko się wypaliła, albo zostaw – wyschnie sama, ale dużo wolniej.';
+        : `Rdzeń pomalowany. Podpal farbę (wypali się w ${Math.round(bal.burnSec)} s) albo zostaw – wyschnie sama w ${Math.round(bal.drySec)} s.`;
     };
     let pid = -1, last: { u: number; v: number } | null = null;
     const at = (e: PointerEvent) => { const r = cv.getBoundingClientRect(); return { u: (e.clientX - r.left) / r.width, v: (e.clientY - r.top) / r.height }; };
@@ -65,7 +65,7 @@ export class PaintController {
     this.close = () => {
       this.close = null; removeEventListener('keydown', key, true); root.remove();
       this.bus.emit('game:pause', { paused: false });
-      if (p.state === 'wet') this.bus.emit('toast', { text: `Farba na formie ${def.number} schnie sama (ok. ${Math.round(p.t / 60)} min). Podpalona wypaliłaby się w ${Math.round(bal.burnSec)} s.`, kind: 'info' });
+      if (p.state === 'wet') this.bus.emit('toast', { text: `Farba na formie ${def.number} schnie sama (${Math.ceil(p.t)} s). Podpalona wypala się w ${Math.round(bal.burnSec)} s.`, kind: 'info' });
     };
   }
   dispose() { this.close?.(); this.off.forEach(f => f()); }

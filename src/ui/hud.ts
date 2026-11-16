@@ -170,7 +170,7 @@ export class Hud {
     };
     for (const l of g.yard.loads) {
       if (l.kind === 'form') {
-        const p = l.paint; const st = !p || p.state === 'raw' ? '' : p.state === 'wet' ? ` · farba schnie ${Math.floor(p.t / 60)}:${String(Math.floor(p.t % 60)).padStart(2, '0')}` : p.state === 'burning' ? ` · pali się ${Math.ceil(p.t)} s` : ' · gotowa';
+        const p = l.paint; const st = !p || p.state === 'raw' ? '' : p.state === 'wet' ? ` · farba schnie ${Math.ceil(p.t)} s` : p.state === 'burning' ? ` · pali się ${Math.ceil(p.t)} s` : ' · gotowa';
         put(l.id, `Forma ${l.def.number}${st}`, p?.state === 'ready' ? 'form ready' : p?.state === 'burning' ? 'form burn' : 'form', l.x, l.y + l.height + .25, l.z);
       }
       else put(l.id, l.form ? `${l.def.number} · zasypany` : l.def.number, l.form ? 'form' : 'model', l.x, l.y + l.height + .25, l.z);
