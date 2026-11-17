@@ -11,7 +11,12 @@ export interface Character {
   points: number;
   shift_count: number;
   last_position: { x: number; z: number; room?: string } | null;
+  /** aktywna postać – ta wchodzi na halę i zbiera punkty */
+  is_active?: boolean;
 }
+
+/** Maksymalna liczba postaci na jednym koncie (pilnuje też serwer). */
+export const MAX_CHARACTERS = 5;
 
 export interface SessionUser { id: string; email: string }
 
@@ -24,7 +29,12 @@ export interface Backend {
   signIn(email: string, password: string): Promise<AuthResult>;
   signOut(): Promise<void>;
   resetPassword(email: string): Promise<{ ok: boolean; error?: string }>;
+  /** Aktywna postać (albo null, gdy konto nie ma jeszcze żadnej). */
   getCharacter(): Promise<Character | null>;
+  /** Wszystkie postacie konta, od najstarszej. */
+  listCharacters(): Promise<Character[]>;
+  /** Ustawia aktywną postać. */
+  setActiveCharacter(id: string): Promise<{ ok: boolean; error?: string }>;
   createCharacter(name: string, appearance: Appearance): Promise<{ ok: true; character: Character } | { ok: false; error: string }>;
   updateCharacter(patch: Partial<Pick<Character, 'appearance' | 'last_position'>>): Promise<void>;
   getBalance(): Promise<{ key: string; value: unknown }[]>;
@@ -48,6 +58,7 @@ export function plError(msg: string): string {
   if (m.includes('unable to validate email') || m.includes('invalid email')) return 'Ten adres e-mail wygląda na nieprawidłowy.';
   if (m.includes('rate limit')) return 'Za dużo prób w krótkim czasie. Spróbuj ponownie za kilka minut.';
   if (m.includes('duplicate') && m.includes('name')) return 'Ta nazwa postaci jest już zajęta. Wybierz inną.';
+  if (m.includes('5 postaci')) return 'Masz już 5 postaci – to maksimum na jedno konto.';
   if (m.includes('failed to fetch') || m.includes('network')) return 'Brak połączenia z serwerem gry. Sprawdź internet i spróbuj ponownie.';
   return msg;
 }

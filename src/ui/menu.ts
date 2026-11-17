@@ -2,7 +2,7 @@ import { h } from './dom';
 import { settings, LIMITS, type Settings } from '../core/settings';
 
 /** Menu gry z ustawieniami: kamera, sterowanie, ekran. Zmiany działają od razu i zapisują się w przeglądarce. */
-export function buildMenu(o: { onClose: () => void; onLogout: () => void; onFullscreen: () => void; onTutorial: () => void; touch: boolean }): { el: HTMLElement; dispose: () => void } {
+export function buildMenu(o: { onClose: () => void; onLogout?: () => void; onMainMenu?: () => void; onFullscreen: () => void; onTutorial?: () => void; touch: boolean; title?: string; closeLabel?: string }): { el: HTMLElement; dispose: () => void } {
   type NumKey = keyof typeof LIMITS;
   const sync: ((s: Settings) => void)[] = [];
   const slider = (key: NumKey, label: string, hint: string, fmt: (v: number) => string, step: number) => {
@@ -18,15 +18,18 @@ export function buildMenu(o: { onClose: () => void; onLogout: () => void; onFull
   };
   const pct = (v: number) => Math.round(v * 100) + '%';
   const card = h('section', { class: 'panel menu-card', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Menu gry' },
-    h('header', { class: 'menu-h' }, h('div', { class: 'title', text: 'Menu' }), h('button', { class: 'btn pri', type: 'button', text: 'Wróć do gry', onclick: o.onClose })),
+    h('header', { class: 'menu-h' }, h('div', { class: 'title', text: o.title ?? 'Menu' }), h('button', { class: 'btn pri', type: 'button', text: o.closeLabel ?? 'Wróć do gry', onclick: o.onClose })),
     h('div', { class: 'menu-body' },
-      h('div', { class: 'set row2' }, h('div', {}, h('div', { class: 'set-h', text: 'Samouczek' }), h('span', { class: 'dim small', text: 'Co i w jakiej kolejności robić – krok po kroku.' })), h('button', { class: 'btn', type: 'button', text: 'Uruchom', onclick: o.onTutorial })),
+      o.onTutorial ? h('div', { class: 'set row2' }, h('div', {}, h('div', { class: 'set-h', text: 'Samouczek' }), h('span', { class: 'dim small', text: 'Co i w jakiej kolejności robić – krok po kroku.' })), h('button', { class: 'btn', type: 'button', text: 'Uruchom', onclick: () => o.onTutorial?.() })) : null,
       h('h3', { text: 'Kamera' }),
       slider('camTilt', 'Kąt kamery', '12° – prawie z góry, 60° – mocno ukośnie, widać twarze i boki maszyn.', v => v.toFixed(0) + '°', 1),
       h('h3', { text: 'Sterowanie' }),
       slider('moveSens', 'Czułość chodzenia', 'Mniej = spokojniejsza gałka: pełna prędkość dopiero przy krawędzi.', pct, .05),
       slider('armSens', 'Czułość ramienia mieszarki', 'Jak szybko ramię jedzie przy sypaniu.', pct, .05),
       o.touch ? toggle('leftHanded', 'Układ dla leworęcznych', 'Gałka po prawej, przyciski akcji po lewej.') : null,
+      h('h3', { text: 'Dźwięk' }),
+      slider('volume', 'Głośność', 'Wszystkie dźwięki gry. 0% – wyciszone.', pct, .05),
+      slider('ambience', 'Tło hali', 'Szum, buczenie i dudnienie hali (bez uderzeń i wołań).', pct, .05),
       h('h3', { text: 'Ekran' }),
       slider('uiScale', 'Wielkość przycisków i napisów', 'Większe łatwiej trafić palcem, mniejsze mniej zasłaniają.', pct, .05),
       toggle('labels', 'Napisy nad miejscami', 'Nazwy stanowisk, drzwi i maszyn na hali.'),
@@ -35,7 +38,8 @@ export function buildMenu(o: { onClose: () => void; onLogout: () => void; onFull
     h('footer', { class: 'menu-f' },
       h('button', { class: 'btn', type: 'button', text: 'Pełny ekran', onclick: o.onFullscreen }),
       h('button', { class: 'btn', type: 'button', text: 'Przywróć domyślne', onclick: () => settings.reset() }),
-      h('button', { class: 'btn danger', type: 'button', text: 'Wyloguj', onclick: o.onLogout }),
+      o.onMainMenu ? h('button', { class: 'btn', type: 'button', text: 'Menu główne', onclick: o.onMainMenu }) : null,
+      o.onLogout ? h('button', { class: 'btn danger', type: 'button', text: 'Wyloguj', onclick: o.onLogout }) : null,
     ),
   );
   const el = h('div', { class: 'menu', hidden: true, onpointerdown: (e: Event) => { if (e.target === el) o.onClose(); } }, card);

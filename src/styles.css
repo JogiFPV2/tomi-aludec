@@ -415,3 +415,43 @@ body.lefty.touch .tutor { left: auto; right: var(--sr); }
 .paint-stage { overflow: hidden; }
 .paint-cv { height: auto; width: auto; max-height: min(100%, 72vh); }
 .paint-cv { width: min(100%, calc(72vh * 40 / 28)); }
+
+/* ===== Menu główne ===== */
+.screen.mainmenu { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: .8em; overflow: auto;
+  padding: max(16px, var(--st)) max(16px, var(--sr)) max(14px, var(--sb)) max(16px, var(--sl));
+  background: radial-gradient(ellipse at 70% 30%, rgba(255, 140, 40, .18), transparent 55%), radial-gradient(ellipse at 20% 90%, rgba(90, 70, 150, .25), transparent 60%), #15111a; }
+.mm-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1em; flex-wrap: wrap; }
+.mm-head .logo { margin: 0; font-size: clamp(2.4em, 6vw, 4.2em); }
+.mm-user { display: flex; align-items: center; gap: .7em; flex-wrap: wrap; justify-content: flex-end; }
+.mm-body { display: grid; grid-template-columns: minmax(0, 22em) minmax(0, 20em); gap: 1.4em; align-content: center; justify-content: center; min-height: 0; }
+.mm-nav { display: grid; gap: .7em; align-content: center; }
+.mm-big { min-height: 72px; font-size: 1.5em; }
+.mm-item { min-height: 58px; font-size: 1.2em; display: flex; justify-content: space-between; align-items: center; text-align: left; }
+.mm-card { display: grid; gap: .45em; padding: 1em 1.1em; justify-items: stretch; align-content: start; }
+.mm-card.empty { align-content: center; text-align: center; }
+.mm-portrait { width: 100%; max-width: 15em; justify-self: center; aspect-ratio: 256 / 300; object-fit: cover; border-radius: 10px; background: radial-gradient(circle at 50% 40%, #4b3a2e, #1d1720); border: 2px solid rgba(255, 255, 255, .18); }
+.mm-pts { color: var(--acc); font-weight: 700; font-size: 1.2em; }
+.mm-chars-h { display: flex; align-items: center; gap: 1em; flex-wrap: wrap; grid-column: 1 / -1; }
+.mm-chars { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fill, minmax(12.5em, 1fr)); gap: .9em; width: min(70em, 100%); }
+.mm-char { display: grid; gap: .5em; padding: .8em; align-content: start; position: relative; }
+.mm-char .mm-portrait { max-width: none; }
+.mm-char.on { border-color: var(--acc); box-shadow: 0 0 0 2px var(--acc), 0 4px 0 rgba(0, 0, 0, .5); }
+.mm-char .title { font-size: 1.25em; }
+.mm-badge { justify-self: start; font-family: var(--f-disp); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; background: var(--acc); color: var(--acc-ink); padding: .25em .7em; border-radius: 99px; }
+.mm-char.add { cursor: pointer; place-items: center; align-content: center; min-height: 16em; color: var(--fg); font: inherit; font-family: var(--f-disp); font-weight: 700; font-size: 1.2em; letter-spacing: .08em; text-transform: uppercase; border-style: dashed; }
+.mm-plus { font-size: 3em; line-height: 1; color: var(--acc); }
+.screen.mainmenu .form-msg { text-align: center; margin: 0; min-height: 1.4em; }
+.screen.mainmenu .menu { position: fixed; }
+@media (max-width: 760px) { .mm-body { grid-template-columns: minmax(0, 1fr); align-content: start; } .mm-card { grid-template-columns: 7em minmax(0, 1fr); align-items: center; } .mm-card .mm-portrait { grid-row: 1 / span 4; grid-column: 1; } .mm-card > :not(.mm-portrait) { grid-column: 2; } }
+@media (max-height: 520px) and (min-width: 600px) { .mm-head .logo { font-size: 2.2em; } .mm-big { min-height: 58px; } .mm-item { min-height: 50px; } .mm-card .mm-portrait { max-width: 9em; } }
+
+/* ===== Multitouch: wciśnięty przycisk (dotyk) ===== */
+.btn.pressed, .prompt.pressed { transform: translateY(2px); filter: brightness(1.2); }
+.mm-body { font-size: clamp(15px, 1.25vw, 19px); }
+.mm-body.list { align-content: start; justify-content: stretch; grid-template-columns: minmax(0, 1fr); justify-items: center; }
+.mm-chars-h { width: min(70em, 100%); }
+@media (max-height: 520px) {
+  .mm-chars { grid-template-columns: repeat(auto-fill, minmax(10em, 1fr)); }
+  .mm-char .mm-portrait { max-height: 8.5em; object-fit: cover; object-position: 50% 20%; }
+  .mm-char.add { min-height: 10em; }
+}

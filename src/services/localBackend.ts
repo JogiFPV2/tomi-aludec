@@ -1,4 +1,4 @@
-import type { Backend, Character, AuthResult } from './backend';
+import { MAX_CHARACTERS, type Backend, type Character, type AuthResult } from './backend';
 import { normalizeAppearance, type Appearance } from '../data/appearance';
 
 /**
@@ -6,7 +6,7 @@ import { normalizeAppearance, type Appearance } from '../data/appearance';
  * Włączany adresem z ?tryb=lokalny albo automatycznie, gdy brak konfiguracji Supabase.
  */
 const KEY = 'ta-local-db-v1';
-interface Db { users: { id: string; email: string; password: string }[]; session: string | null; characters: Record<string, Character> }
+interface Db { users: { id: string; email: string; password: string }[]; session: string | null; characters: Record<string, Character>; /** postacie konta (kilka na konto) */ chars?: Record<string, Character[]> }
 
 function load(): Db {
   try { const raw = localStorage.getItem(KEY); if (raw) return JSON.parse(raw) as Db; } catch { /* brak dostępu do pamięci */ }
@@ -39,20 +39,31 @@ export class LocalBackend implements Backend {
   }
   async signOut() { db().session = null; save(); }
   async resetPassword() { return { ok: true }; }
-  async getCharacter() {
-    const d = db(); const c = d.session ? d.characters[d.session] : undefined;
-    return c ? { ...c, appearance: normalizeAppearance(c.appearance) } : null;
+  /** Postacie zalogowanego konta (stary zapis z jedną postacią przenoszony automatycznie). */
+  private mine(): Character[] | null {
+    const d = db(); if (!d.session) return null; d.chars ??= {};
+    if (!d.chars[d.session]) { const old = d.characters[d.session]; d.chars[d.session] = old ? [{ ...old, is_active: true }] : []; }
+    return d.chars[d.session];
+  }
+  async listCharacters() { return (this.mine() ?? []).map(c => ({ ...c, appearance: normalizeAppearance(c.appearance) })); }
+  async getCharacter() { const all = await this.listCharacters(); return all.find(c => c.is_active) ?? all[0] ?? null; }
+  async setActiveCharacter(id: string) {
+    const m = this.mine(); if (!m?.some(c => c.id === id)) return { ok: false, error: 'Nie ma takiej postaci.' };
+    for (const c of m) c.is_active = c.id === id; save(); return { ok: true };
   }
   async createCharacter(name: string, appearance: Appearance) {
-    const d = db(); if (!d.session) return { ok: false as const, error: 'Zaloguj się ponownie.' };
-    if (Object.values(d.characters).some(c => c.name.toLowerCase() === name.toLowerCase())) return { ok: false as const, error: 'Ta nazwa postaci jest już zajęta. Wybierz inną.' };
-    const c: Character = { id: uid(), name, appearance, points: 0, shift_count: 0, last_position: null };
-    d.characters[d.session] = c; save();
+    const d = db(); const m = this.mine(); if (!m) return { ok: false as const, error: 'Zaloguj się ponownie.' };
+    if (m.length >= MAX_CHARACTERS) return { ok: false as const, error: `Masz już ${MAX_CHARACTERS} postaci – to maksimum na jedno konto.` };
+    const taken = Object.values(d.chars ?? {}).flat().some(c => c.name.toLowerCase() === name.toLowerCase());
+    if (taken) return { ok: false as const, error: 'Ta nazwa postaci jest już zajęta. Wybierz inną.' };
+    for (const c of m) c.is_active = false;
+    const c: Character = { id: uid(), name, appearance, points: 0, shift_count: 0, last_position: null, is_active: true };
+    m.push(c); save();
     return { ok: true as const, character: c };
   }
   async updateCharacter(patch: Partial<Pick<Character, 'appearance' | 'last_position'>>) {
-    const d = db(); if (!d.session || !d.characters[d.session]) return;
-    Object.assign(d.characters[d.session], patch); save();
+    const c = this.mine()?.find(x => x.is_active); if (!c) return;
+    Object.assign(c, patch); save();
   }
   async getBalance() { return []; }
   private viewsKey() { return 'tomi.lokalny.instrukcje.' + (db().session ?? ''); }
@@ -60,7 +71,7 @@ export class LocalBackend implements Backend {
   async viewInstruction(modelId: string) { const v = await this.getInstructionViews(); v[modelId] = (v[modelId] ?? 0) + 1; try { localStorage.setItem(this.viewsKey(), JSON.stringify(v)); } catch { /* tryb prywatny */ } return v[modelId]; }
   async serverNow() { return Date.now(); }
   async addPoints(delta: number) {
-    const d = db(); const c = d.session ? d.characters[d.session] : undefined; if (!c) throw new Error('Brak postaci');
+    const c = this.mine()?.find(x => x.is_active); if (!c) throw new Error('Brak postaci');
     c.points = Math.max(0, c.points + Math.max(-1000, Math.min(1000, Math.round(delta)))); save(); return c.points;
   }
 }

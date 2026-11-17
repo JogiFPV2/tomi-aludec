@@ -38,25 +38,35 @@ export class SupabaseBackend implements Backend {
     return error ? { ok: false, error: plError(error.message) } : { ok: true };
   }
 
-  async getCharacter(): Promise<Character | null> {
-    const { data, error } = await this.sb.from('characters').select('id,name,appearance,points,shift_count,last_position').maybeSingle();
+  async listCharacters(): Promise<Character[]> {
+    const { data, error } = await this.sb.from('characters').select('id,name,appearance,points,shift_count,last_position,is_active').order('created_at');
     if (error) throw new Error(plError(error.message));
-    return data ? { ...data, appearance: normalizeAppearance(data.appearance) } as Character : null;
+    return (data ?? []).map(d => ({ ...d, appearance: normalizeAppearance(d.appearance) }) as Character);
+  }
+  async getCharacter(): Promise<Character | null> {
+    const all = await this.listCharacters();
+    return all.find(c => c.is_active) ?? all[0] ?? null;
+  }
+  async setActiveCharacter(id: string) {
+    const { error } = await this.sb.rpc('set_active_character', { p_id: id });
+    return error ? { ok: false, error: plError(error.message) } : { ok: true };
   }
 
   async createCharacter(name: string, appearance: Appearance) {
     const user = await this.currentUser();
     if (!user) return { ok: false as const, error: 'Sesja wygasła. Zaloguj się ponownie.' };
     const { data, error } = await this.sb.from('characters').insert({ user_id: user.id, name, appearance })
-      .select('id,name,appearance,points,shift_count,last_position').single();
+      .select('id,name,appearance,points,shift_count,last_position,is_active').single();
     if (error) return { ok: false as const, error: error.code === '23505' ? 'Ta nazwa postaci jest już zajęta. Wybierz inną.' : plError(error.message) };
-    return { ok: true as const, character: { ...data, appearance: normalizeAppearance(data.appearance) } as Character };
+    // nowa postać od razu staje się aktywna
+    const act = await this.setActiveCharacter(data.id);
+    return { ok: true as const, character: { ...data, is_active: act.ok, appearance: normalizeAppearance(data.appearance) } as Character };
   }
 
   async updateCharacter(patch: Partial<Pick<Character, 'appearance' | 'last_position'>>) {
     const user = await this.currentUser();
     if (!user) return;
-    const { error } = await this.sb.from('characters').update(patch).eq('user_id', user.id);
+    const { error } = await this.sb.from('characters').update(patch).eq('user_id', user.id).eq('is_active', true);
     if (error) console.warn('[backend] zapis postaci nie powiódł się', error.message);
   }
 

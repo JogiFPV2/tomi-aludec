@@ -27,7 +27,7 @@ export class Hud {
   private lastToast = new Map<string, number>();
   private pointsEl: HTMLElement;
 
-  constructor(parent: HTMLElement, private game: Game, bus: EventBus, character: Character, opts: { clock: GameClock; onLogout: () => void; dev: boolean }) {
+  constructor(parent: HTMLElement, private game: Game, bus: EventBus, character: Character, opts: { clock: GameClock; onMainMenu: () => void; onLogout: () => void; dev: boolean }) {
     const touch = this.touch = document.body.classList.contains('touch');
     this.roomEl = h('div', { class: 'dim small' });
     this.pointsEl = h('span', { class: 'num pts', text: `${character.points} pkt` });
@@ -38,7 +38,7 @@ export class Hud {
       h('div', { class: 'row' }, h('span', { class: 'dim', text: 'Sypacz' }), this.roomEl),
     );
     // menu gry (ustawienia, pełny ekran, wylogowanie) – jeden przycisk zamiast kilku
-    const menu = buildMenu({ touch, onClose: () => this.toggleMenu(false), onTutorial: () => { this.toggleMenu(false); this.tutorial.start(); }, onLogout: () => opts.onLogout(),
+    const menu = buildMenu({ touch, onMainMenu: () => { this.toggleMenu(false); opts.onMainMenu(); }, onClose: () => this.toggleMenu(false), onTutorial: () => { this.toggleMenu(false); this.tutorial.start(); }, onLogout: () => opts.onLogout(),
       onFullscreen: () => { const p = document.documentElement.requestFullscreen?.(); p?.catch(() => this.toast('Pełny ekran nie jest dostępny w tej przeglądarce')); } });
     this.menuEl = menu.el; this.offs.push(menu.dispose);
     const menuBtn = h('button', { class: 'btn small menu-btn', type: 'button', 'aria-label': 'Menu gry', onclick: () => this.toggleMenu() }, h('span', { class: 'burger', text: '☰' }), h('span', { text: 'Menu' }));

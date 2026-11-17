@@ -10,9 +10,11 @@ export interface Settings {
   leftHanded: boolean;  // gałka po prawej, akcje po lewej
   grain: boolean;       // papierowe ziarno na obrazie
   labels: boolean;      // napisy nad miejscami na hali
+  volume: number;       // głośność ogólna, 0–1
+  ambience: number;     // głośność tła hali, 0–1
 }
-export const DEFAULTS: Settings = { camTilt: 16, moveSens: .8, armSens: .7, uiScale: 1, leftHanded: false, grain: true, labels: true };
-export const LIMITS = { camTilt: [12, 60], moveSens: [.5, 1.5], armSens: [.4, 1.4], uiScale: [.85, 1.3] } as const;
+export const DEFAULTS: Settings = { camTilt: 16, moveSens: .8, armSens: .7, uiScale: 1, leftHanded: false, grain: true, labels: true, volume: .8, ambience: .7 };
+export const LIMITS = { camTilt: [12, 60], moveSens: [.5, 1.5], armSens: [.4, 1.4], uiScale: [.85, 1.3], volume: [0, 1], ambience: [0, 1] } as const;
 const KEY = 'tomi.ustawienia';
 
 /** Wczytane wartości przycina do dozwolonych zakresów (stare lub zepsute zapisy nie psują gry). */

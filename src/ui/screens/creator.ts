@@ -9,7 +9,7 @@ import {
 import type { Backend, Character } from '../../services/backend';
 
 /** Kreator postaci z podglądem 3D. */
-export function creatorScreen(root: HTMLElement, backend: Backend, lowQ: boolean, onDone: (c: Character) => void): () => void {
+export function creatorScreen(root: HTMLElement, backend: Backend, lowQ: boolean, onDone: (c: Character) => void, onCancel?: () => void): () => void {
   let a: Appearance = { ...DEFAULT_APPEARANCE };
   // podgląd 3D
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
@@ -71,7 +71,7 @@ export function creatorScreen(root: HTMLElement, backend: Backend, lowQ: boolean
   const msg = h('p', { class: 'form-msg', role: 'status' });
   const helmetBtn = h('button', { class: 'btn small', type: 'button', text: 'Załóż kask', onclick: () => { helmetOn = !helmetOn; helmetBtn.textContent = helmetOn ? 'Zdejmij kask' : 'Załóż kask'; avatar?.setHelmet(helmetOn); } });
   const randomBtn = h('button', { class: 'btn', type: 'button', text: 'Losuj wygląd', onclick: () => { const keepBody = a.body; a = randomAppearance(); void keepBody; panelBox.innerHTML = ''; build(); panelBox.append(...Object.values(panels)); showTab(tabs.querySelector('.tab.on')?.getAttribute('data-id') ?? 'cialo'); rebuild(); } });
-  const saveBtn = h('button', { class: 'btn pri', type: 'button', text: 'Zapisz postać i wejdź na zmianę', onclick: async () => {
+  const saveBtn = h('button', { class: 'btn pri', type: 'button', text: 'Zapisz postać', onclick: async () => {
     const n = name.value.trim().replace(/\s+/g, ' ');
     if (n.length < 2) { msg.textContent = 'Wpisz imię postaci (co najmniej 2 znaki).'; msg.className = 'form-msg bad'; name.focus(); return; }
     saveBtn.disabled = true; msg.textContent = 'Zapisuję postać…'; msg.className = 'form-msg';
@@ -82,10 +82,10 @@ export function creatorScreen(root: HTMLElement, backend: Backend, lowQ: boolean
   } });
 
   const screen = h('div', { class: 'screen creator' },
-    h('header', { class: 'creator-head' }, h('div', {}, h('div', { class: 'eyebrow', text: 'Krok 1 z 1' }), h('h1', { class: 'title', text: 'Kreator postaci' })),
+    h('header', { class: 'creator-head' }, h('div', {}, h('div', { class: 'eyebrow', text: 'Nowa postać' }), h('h1', { class: 'title', text: 'Kreator postaci' })),
       h('label', { class: 'field name' }, h('span', { text: 'Imię i nazwisko postaci' }), name)),
     h('div', { class: 'creator-body' }, h('nav', { class: 'creator-nav' }, tabs), panelBox, canvasWrap),
-    h('footer', { class: 'creator-foot' }, helmetBtn, randomBtn, h('div', { class: 'grow' }, msg), saveBtn));
+    h('footer', { class: 'creator-foot' }, onCancel ? h('button', { class: 'btn', type: 'button', text: '‹ Menu', onclick: onCancel }) : null, helmetBtn, randomBtn, h('div', { class: 'grow' }, msg), saveBtn));
   root.append(screen);
   rebuild();
 
