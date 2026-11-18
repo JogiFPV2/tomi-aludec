@@ -1,7 +1,7 @@
 import { h } from './dom';
 import type { Game } from '../game/Game';
 import type { EventBus } from '../core/events';
-import { STATIONS, SLOT_X, inPaintZone, PAINT } from '../data/layout';
+import { STATIONS, SLOT_X, PAINT } from '../data/layout';
 
 /**
  * Samouczek: krótka lista kroków „co i w jakiej kolejności”. Każdy krok zalicza się sam,
@@ -37,9 +37,9 @@ export const STEPS: Step[] = [
     done: g => g.yard.loads.some(l => l.kind === 'form') },
   { title: 'Forma na paletę', text: 'Odłóż formę na pustą paletę przy stanowisku i odczep. Dalej formą zajmuje się malarz rdzeni.',
     done: g => g.yard.loads.some(l => l.kind === 'form' && !l.heldBy && g.transport.palletTopAt(l.x, l.z) !== null && Math.abs(l.y - g.transport.palletTopAt(l.x, l.z)!) < .04) },
-  { title: 'Forma do malarni', text: `Paleciakiem zabierz paletę z formą i zawieź ją do strefy „${PAINT.name}” (niebieska ramka w południowej części hali). Odstaw ją tam.`,
-    done: g => g.yard.loads.some(l => l.kind === 'form' && !l.heldBy && inPaintZone(l.x, l.z) && !g.transport.holding?.carry) },
-  { title: 'Pomaluj i podpal', text: 'Podejdź do formy i wybierz „Maluj rdzeń”. Pokryj cały wierzch siwą farbą, potem „Podpal farbę” – gdy ogień zgaśnie, forma jest gotowa.',
+  { title: 'Forma pod maszynę', text: `Paleciakiem zabierz paletę z formą do strefy „${PAINT.name}” (niebieska ramka na południu hali) i odstaw ją pod maszynę malującą – na żółtą ramkę pod portalem.`,
+    done: g => PAINT.machines.some(m => !!g.formOnMachine(m)) },
+  { title: 'Pomaluj i wypal', text: 'Podejdź do pulpitu maszyny i włącz „Tryb malowania”. Pokryj cały wierzch siwą farbą, potem „Podpal farbę” – gdy ogień zgaśnie, forma jest gotowa (zmienia kolor na siwy).',
     done: g => g.yard.loads.some(l => l.paint?.state === 'burning' || l.paint?.state === 'ready') },
 ];
 

@@ -15,7 +15,8 @@ import { Input } from './input/input';
 import type { EventBus } from '../core/events';
 import type { Balance } from '../core/balance';
 import type { Backend, Character } from '../services/backend';
-import { ROOMS, SPAWN, MODELS, STATIONS, SLOT_X, LADLE, METAL_BOXES, inPaintZone } from '../data/layout';
+import { ROOMS, SPAWN, MODELS, STATIONS, SLOT_X, LADLE, METAL_BOXES, PAINT, onMachineSpot, type PaintMachine } from '../data/layout';
+import type { Load } from './crane/yard';
 import { PaintShop } from './paint/shop';
 import { METALS } from '../data/metals';
 import { modelById } from '../data/models';
@@ -232,13 +233,15 @@ export class Game {
         const eff = this.transport.holding ? -1 : d - 1.2;
         if (d < 2.1 && eff < bd) { bd = eff; best = { id: 'box-' + bx.id, label: `Szukaj metali (${modelById(bx.modelId)!.number})`, use: () => this.openBox(bx) }; }
       }
-      // malarnia rdzeni: forma stojąca na palecie w strefie malarni
-      if (!busy) for (const l of this.yard.loads) {
-        if (l.kind !== 'form' || l.heldBy || !inPaintZone(l.x, l.z)) continue;
-        const st = l.paint?.state ?? 'raw'; if (st === 'burning' || st === 'ready') continue;
-        const pt = this.transport.palletTopAt(l.x, l.z); if (pt === null || Math.abs(l.y - pt) > .04) continue;
-        const d = Math.hypot(l.x - this.player.x, l.z - this.player.z);
-        if (d < 2.3 && d < bd) { bd = d; best = { id: 'paint-' + l.id + st, label: st === 'wet' ? `Domaluj / podpal rdzeń (${l.def.number})` : `Maluj rdzeń (${l.def.number})`, use: () => { this.input.reset(); this.o.bus.emit('paint:open', { loadId: l.id }); } }; }
+      // malarnia rdzeni: obsługa przy pulpicie maszyny malującej
+      if (!busy) for (const m of PAINT.machines) {
+        const d = Math.hypot(m.panel.x - this.player.x, m.panel.z - this.player.z); if (d > 1.9 || d - .5 >= bd) continue;
+        const f = this.formOnMachine(m); const st = f?.paint?.state ?? 'raw';
+        bd = d - .5;
+        best = !f ? { id: 'paintm-' + m.id + '-pusto', label: `${m.name}: podstaw formę`, use: () => this.o.bus.emit('toast', { text: `Podstaw paletę z formą pod ${m.name.toLowerCase()} – na żółtą ramkę pod portalem – i odstaw ją tam.`, kind: 'info' }) }
+          : st === 'burning' ? { id: 'paintm-' + m.id + '-pali', label: `Farba się wypala (${f.def.number})`, use: () => this.o.bus.emit('toast', { text: `Forma ${f.def.number} jeszcze się wypala – poczekaj, aż ogień zgaśnie.`, kind: 'info' }) }
+          : st === 'ready' ? { id: 'paintm-' + m.id + '-gotowa', label: `Forma ${f.def.number} gotowa`, use: () => this.o.bus.emit('toast', { text: `Forma ${f.def.number} jest pomalowana i wypalona. Zabierz ją paleciakiem, żeby zwolnić maszynę.`, kind: 'ok' }) }
+          : { id: 'paintm-' + m.id + '-' + st, label: st === 'wet' ? `Tryb malowania – dokończ (${f.def.number})` : `Tryb malowania (${f.def.number})`, use: () => { this.input.reset(); this.o.bus.emit('paint:open', { loadId: f.id, machine: m.name }); } };
       }
       const ta = this.transport.action(this.player);
       if (ta && ta.dist < bd) best = { id: ta.id, label: ta.label, use: () => { ta.run(); this.afterTransport(); } };
@@ -272,6 +275,15 @@ export class Game {
     this.camera.position.copy(this.camPos); this.camera.lookAt(this.camTarget);
     this.sun.position.set(this.camTarget.x - 11, 15, this.camTarget.z - 13); this.sun.target.position.copy(this.camTarget);
   }
+
+  /** Forma stojąca na palecie na stanowisku maszyny malującej (albo null). */
+  formOnMachine(m: PaintMachine): Load | null {
+    return this.yard.loads.find(l => {
+      if (l.kind !== 'form' || l.heldBy || !onMachineSpot(m, l.x, l.z)) return false;
+      const pt = this.transport.palletTopAt(l.x, l.z); return pt !== null && Math.abs(l.y - pt) < .04 && !this.isOnForks(l);
+    }) ?? null;
+  }
+  private isOnForks(l: Load) { const c = this.transport.holding?.carry; return !!c && Math.abs(c.x - l.x) < .1 && Math.abs(c.z - l.z) < .1; }
 
   /** Otwiera przekładanie metali ze skrzyni na paletę stojącą obok (albo na widłach). */
   private openBox(bx: Game['boxes'][number]) {

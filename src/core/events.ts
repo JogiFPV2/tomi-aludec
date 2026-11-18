@@ -23,7 +23,7 @@ export interface GameEvents {
   'points:changed': { points: number; delta: number; reason?: string };
   'game:pause': { paused: boolean };
   /** malarz rdzeni zaczyna malować formę */
-  'paint:open': { loadId: string };
+  'paint:open': { loadId: string; machine?: string };
   /** gracz otworzył skrzynię z metalami (przekładanie na paletę) */
   'metals:open': { boxId: string };
   'metals:closed': { boxId: string };

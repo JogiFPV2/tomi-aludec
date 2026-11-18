@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Builder, V } from '../render/build';
 import { CollisionWorld } from './collision';
-import { ROOMS, WALLS, STATIONS, COLUMNS, METAL_BOXES, DOORS, SLOT_X, MIXER_OFF, FORM_PALLETS_OFF, HALL, CRANE_BAY_D, PAINT } from '../../data/layout';
+import { ROOMS, WALLS, STATIONS, COLUMNS, METAL_BOXES, DOORS, SLOT_X, MIXER_OFF, FORM_PALLETS_OFF, HALL, CRANE_BAY_D, PAINT, type PaintMachine } from '../../data/layout';
 
 /** Buduje świat z danych układu: podłogi, ściany, stanowiska, wyposażenie, kolizje i podłoża. */
 export interface Support { x0: number; z0: number; x1: number; z1: number; h: number }
@@ -120,6 +120,7 @@ export class World {
     const b = this.b, g = this.group, P = PAINT; const w = P.x1 - P.x0, d = P.z1 - P.z0, cx = (P.x0 + P.x1) / 2, cz = (P.z0 + P.z1) / 2;
     for (const [bw, bd, x, z] of [[w, .14, cx, P.z0], [w, .14, cx, P.z1], [.14, d, P.x0, cz], [.14, d, P.x1, cz]]) g.add(b.box(bw, .006, bd, 'paintLine', [x, .004, z]));
     for (const [x, z] of P.spots) for (const [bw, bd, dx, dz] of [[1.8, .05, 0, .75], [1.8, .05, 0, -.75], [.05, 1.5, .9, 0], [.05, 1.5, -.9, 0]]) g.add(b.box(bw, .006, bd, 'core', [x + dx, .004, z + dz]));
+    for (const m of P.machines) this.paintMachine(m);
     // stół z farbą: wiadra z siwą farbą, pędzel, palnik gazowy
     const s = P.stand; g.add(b.box(1.8, .08, .8, 'bench', [s.x, .85, s.z]));
     for (const dx of [-.8, .8]) for (const dz of [-.3, .3]) g.add(b.box(.07, .85, .07, 'steel', [s.x + dx, .42, s.z + dz]));
@@ -128,6 +129,27 @@ export class World {
     g.add(b.cyl(.09, .09, .5, 'red', [s.x + .5, 1.14, s.z + .2], undefined, 12), b.cyl(.02, .02, .3, 'steel', [s.x + .5, 1.5, s.z + .2], undefined, 8));
     this.col.addRect({ x0: s.x - 1, z0: s.z - .5, x1: s.x + 1, z1: s.z + .5 });
     this.labels.push({ text: P.name, pos: V(cx, 1.2, P.z0 + .6) }, { text: 'Siwa farba i palnik', pos: V(s.x, 2, s.z) });
+  }
+
+  /** Maszyna malująca: portal nad stanowiskiem palety (otwarty od południa – wjazd paleciakiem),
+   *  belka z dyszami siwej farby, pierścień palnika do wypalania i pulpit sterowniczy. */
+  private paintMachine(m: PaintMachine) {
+    const b = this.b, g = this.group, { x, z } = m.spot;
+    for (const [bw, bd, dx, dz] of [[1.9, .09, 0, .82], [1.9, .09, 0, -.82], [.09, 1.72, .95, 0], [.09, 1.72, -.95, 0]]) g.add(b.box(bw, .008, bd, 'core', [x + dx, .005, z + dz]));
+    for (const dx of [-1.15, 1.15]) { g.add(b.box(.16, 2.5, .16, 'blue', [x + dx, 1.25, z - .95]), b.box(.3, .06, .3, 'steel', [x + dx, .03, z - .95])); this.col.addCircle({ x: x + dx, z: z - .95, r: .16 }); }
+    g.add(b.box(2.46, .2, .2, 'blue', [x, 2.5, z - .95]), b.box(.2, .14, 1.5, 'yellow', [x, 2.38, z - .2]));
+    // belka z dyszami i wąż z farbą
+    g.add(b.box(1.7, .1, .14, 'steel', [x, 2.24, z + .2]));
+    for (let i = 0; i < 5; i++) g.add(b.cyl(.035, .025, .1, 'paintGrey', [x - .64 + i * .32, 2.15, z + .2], undefined, 8));
+    g.add(b.limb(V(x + 1.15, 2.3, z - .95), V(x + .85, 2.24, z + .2), .03, 'dark', 6));
+    // pierścień palnika
+    g.add(b.box(1.6, .05, .05, 'red', [x, 1.7, z - .6]), b.box(1.6, .05, .05, 'red', [x, 1.7, z + .6]));
+    // pulpit sterowniczy z przyciskami
+    const p = m.panel; g.add(b.box(.6, 1.05, .45, 'blue', [p.x, .52, p.z]), b.box(.66, .06, .5, 'steel', [p.x, 1.07, p.z]));
+    g.add(b.box(.38, .04, .22, 'dark', [p.x, 1.11, p.z - .05]));
+    for (const [dx, mat] of [[-.13, 'greenBtn'], [0, 'paintGrey'], [.13, 'redBtn']] as [number, string][]) g.add(b.cyl(.04, .04, .05, mat, [p.x + dx, 1.15, p.z + .13], undefined, 10));
+    this.col.addRect({ x0: p.x - .3, z0: p.z - .23, x1: p.x + .3, z1: p.z + .23 });
+    this.labels.push({ text: m.name, pos: V(x, 3, z - .95) });
   }
 
   pallet(x: number, z: number) {

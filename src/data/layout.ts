@@ -90,7 +90,20 @@ export const METAL_BOXES: { id: string; modelId: string; x: number; z: number }[
 /** Kadź z ciekłym aluminium (źródło żaru i iskier). */
 export const LADLE = { x: 73, z: 9 };
 /** Malarnia rdzeni: strefa, w której maluje się i wypala formy stojące na paletach. */
-export const PAINT = { name: 'Malarnia rdzeni', x0: 44, z0: 30, x1: 60, z1: 42, spots: [[47, 33.5], [50.5, 33.5], [54, 33.5], [47, 38.5], [50.5, 38.5], [54, 38.5]] as [number, number][], stand: { x: 58, z: 32 } };
+export interface PaintMachine { id: string; name: string; spot: { x: number; z: number }; panel: { x: number; z: number } }
+export const PAINT = {
+  name: 'Malarnia rdzeni', x0: 44, z0: 30, x1: 60, z1: 42,
+  /** maszyny malujące: paleta z formą stoi na „spot” (żółta ramka), malarz obsługuje maszynę przy pulpicie „panel” */
+  machines: [
+    { id: 'mal1', name: 'Maszyna malująca 1', spot: { x: 47.5, z: 33.4 }, panel: { x: 49.3, z: 34.9 } },
+    { id: 'mal2', name: 'Maszyna malująca 2', spot: { x: 53.5, z: 33.4 }, panel: { x: 55.3, z: 34.9 } },
+  ] as PaintMachine[],
+  /** odkładcze miejsca na palety z formami (przed i po malowaniu) */
+  spots: [[47, 39], [50.5, 39], [54, 39]] as [number, number][],
+  stand: { x: 58.4, z: 31.6 },
+};
+/** Czy środek palety stoi na stanowisku maszyny (żółta ramka). */
+export const onMachineSpot = (m: PaintMachine, x: number, z: number) => Math.abs(x - m.spot.x) < .55 && Math.abs(z - m.spot.z) < .45;
 export const inPaintZone = (x: number, z: number) => x >= PAINT.x0 && x <= PAINT.x1 && z >= PAINT.z0 && z <= PAINT.z1;
 export const SPAWN = { x: -6, z: 21.5 };
 export const CRANE_START_Z = 10;

@@ -8,10 +8,10 @@ import { brush, coverage } from '../../game/paint/paint';
 export class PaintController {
   private off: (() => void)[] = []; private close: (() => void) | null = null;
   constructor(private wrap: HTMLElement, private game: Game, private bus: EventBus, private balance: Balance) {
-    this.off.push(bus.on('paint:open', ({ loadId }) => this.open(loadId)));
+    this.off.push(bus.on('paint:open', ({ loadId, machine }) => this.open(loadId, machine)));
   }
 
-  private open(loadId: string) {
+  private open(loadId: string, machine = 'Maszyna malująca') {
     const l = this.game.yard.loads.find(x => x.id === loadId); if (!l || this.close) return;
     const bal = this.balance.paint, p = this.game.paintShop.paintOf(l), def = l.def;
     this.bus.emit('game:pause', { paused: true });
@@ -55,9 +55,9 @@ export class PaintController {
     const done = () => this.close?.();
     const root = h('div', { class: 'screen paint' },
       h('header', { class: 'panel mhead' },
-        h('div', {}, h('div', { class: 'eyebrow', text: 'Malarnia rdzeni · siwa farba' }), h('div', { class: 'title', text: `Forma ${def.number}` })),
+        h('div', {}, h('div', { class: 'eyebrow', text: `${machine} · tryb malowania · siwa farba` }), h('div', { class: 'title', text: `Forma ${def.number}` })),
         h('div', { class: 'paint-cov' }, h('span', { class: 'dim small', text: 'Pomalowane' }), h('div', { class: 'bar' }, bar), pct),
-        h('div', { class: 'paint-acts' }, fireBtn, h('button', { class: 'btn pri', type: 'button', text: 'Odejdź', onclick: done }))),
+        h('div', { class: 'paint-acts' }, fireBtn, h('button', { class: 'btn pri', type: 'button', text: 'Wyjdź z trybu malowania', onclick: done }))),
       h('div', { class: 'paint-stage' }, cv), hint);
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); done(); } };
     addEventListener('keydown', key, true);
